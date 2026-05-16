@@ -155,10 +155,9 @@ export function InstructorCalendar() {
   const getDaySlots = (date: Date): Slot[] => {
     const dateStr = format(date, "yyyy-MM-dd");
     const workingDay = workingDays.find(d => d.date === dateStr);
-    const isOff = !workingDay || !workingDay.isWorking;
 
-    // For off days, only show existing booked lessons — no empty slots
-    if (isOff) {
+    // Explicitly set as off → only show existing booked lessons, no empty slots
+    if (workingDay && !workingDay.isWorking) {
       const dayLessons = bookedLessons.filter(l => l.date === dateStr);
       return dayLessons.map(l => ({
         date: dateStr,
@@ -172,9 +171,10 @@ export function InstructorCalendar() {
     const slots: Slot[] = [];
     const baseDate = startOfDay(date);
 
-    const startTimeStr = workingDay!.startTime;
-    const endTimeStr = workingDay!.endTime;
-    const duration = workingDay!.slotDurationMin;
+    // Use configured times if working day is set, otherwise defaults
+    const startTimeStr = workingDay ? workingDay.startTime : "09:00";
+    const endTimeStr = workingDay ? workingDay.endTime : "18:00";
+    const duration = workingDay ? workingDay.slotDurationMin : 90;
 
     const [startH, startM] = startTimeStr.split(":").map(Number);
     const [endH, endM] = endTimeStr.split(":").map(Number);

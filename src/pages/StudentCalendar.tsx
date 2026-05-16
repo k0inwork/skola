@@ -106,21 +106,8 @@ export function StudentCalendar() {
     const dateStr = format(date, "yyyy-MM-dd");
     const workingDay = workingDays.find(d => d.date === dateStr);
 
-    // If day is explicitly marked as not working, only show existing booked lessons
+    // Explicitly set as off → only show existing booked lessons, no bookable slots
     if (workingDay && !workingDay.isWorking) {
-      const dayLessons = bookedLessons.filter(l => l.date === dateStr);
-      return dayLessons.map(l => ({
-        date: dateStr,
-        time: l.startTime,
-        endTime: l.endTime,
-        isAvailable: false,
-        isMine: !!(l as any).isMine,
-        lesson: l,
-      }));
-    }
-
-    // If no workingDay record at all, also show no slots
-    if (!workingDay) {
       const dayLessons = bookedLessons.filter(l => l.date === dateStr);
       return dayLessons.map(l => ({
         date: dateStr,
@@ -135,9 +122,10 @@ export function StudentCalendar() {
     const slots: Slot[] = [];
     const baseDate = startOfDay(date);
 
-    const startH = Number(workingDay.startTime.split(":")[0]);
-    const startM = Number(workingDay.startTime.split(":")[1]);
-    const slotDuration = workingDay.slotDurationMin;
+    // Use configured times if working day is set, otherwise defaults
+    const startH = workingDay ? Number(workingDay.startTime.split(":")[0]) : 9;
+    const startM = workingDay ? Number(workingDay.startTime.split(":")[1]) : 0;
+    const slotDuration = workingDay ? workingDay.slotDurationMin : 90;
 
     let current = addMinutes(baseDate, startH * 60 + startM);
 
