@@ -156,8 +156,20 @@ router.post("/book", async (req, res) => {
     }
     
     if (!enrollmentId) {
-      // Mock enrollment
-      enrollmentId = "dummy-enrollment-id"; // since better-sqlite3 might not enforce by default
+      // Find or create a default enrollment for the student
+      const [existingEnrollment] = await db.select().from(enrollments).where(eq(enrollments.studentId, studentId)).limit(1);
+      
+      if (existingEnrollment) {
+        enrollmentId = existingEnrollment.id;
+      } else {
+        const [newEnrollment] = await db.insert(enrollments).values({
+            studentId,
+            courseTypeId: "default-course-type",
+            startDate: date, // start today
+            status: "active"
+        }).returning();
+        enrollmentId = newEnrollment.id;
+      }
     }
 
     // Check for overlap

@@ -11,7 +11,8 @@ import crypto from "crypto";
 const router = Router();
 
 router.get("/google/url", (req, res) => {
-  const redirectUri = `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+  const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+  const redirectUri = `${baseUrl}/api/auth/google/callback`;
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID || "",
     redirect_uri: redirectUri,
@@ -23,7 +24,8 @@ router.get("/google/url", (req, res) => {
 
 router.get("/google/callback", async (req, res) => {
   const { code } = req.query;
-  const redirectUri = `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+  const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+  const redirectUri = `${baseUrl}/api/auth/google/callback`;
   
   if (!code) {
     res.status(400).send("Missing code");
@@ -61,9 +63,7 @@ router.get("/google/callback", async (req, res) => {
       return;
     }
     
-    let user = await db.query.users?.findFirst({
-      where: eq(users.email, userInfo.email),
-    });
+    let [user] = await db.select().from(users).where(eq(users.email, userInfo.email)).limit(1);
     
     if (!user) {
       // create user as client
@@ -82,6 +82,17 @@ router.get("/google/callback", async (req, res) => {
         lastName: userInfo.family_name || "",
         email: userInfo.email,
       });
+    } else if (user.role === "client") {
+      // Check if student profile needs creating for existing client
+      const [existingStudent] = await db.select().from(students).where(eq(students.userId, user.id));
+      if (!existingStudent) {
+        await db.insert(students).values({
+          userId: user.id,
+          firstName: userInfo.given_name || "Student",
+          lastName: userInfo.family_name || "",
+          email: userInfo.email,
+        });
+      }
     }
 
     const { accessToken, refreshToken } = generateTokenPair({
@@ -114,9 +125,7 @@ router.post("/login", validate(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await db.query.users?.findFirst({
-      where: eq(users.email, email),
-    });
+    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
     if (!user) {
       res.status(401).json({ error: "Invalid credentials" });

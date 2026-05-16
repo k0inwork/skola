@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index";
-import { students, users } from "../db/schema";
+import { students, users, notes } from "../db/schema";
 import { requireAdmin, requireAuth } from "../middleware/auth";
 import { validate, createStudentSchema, updateStudentSchema } from "../lib/validation";
 import { hash } from "bcryptjs";
@@ -54,6 +54,33 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error("List students error:", err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/me", async (req, res) => {
+  try {
+    const userId = (req as any).userId;
+    let [student] = await db.select().from(students).where(eq(students.userId, userId)).limit(1);
+    
+    if (!student) {
+        const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        
+        const email = user.email;
+        const [firstName, lastName] = email.split('@')[0].split('.');
+        
+        [student] = await db.insert(students).values({
+            userId: userId,
+            firstName: firstName || "Student",
+            lastName: lastName || "User",
+            email: email,
+            status: "registered"
+        }).returning();
+    }
+    res.json(student);
+  } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal error" });
   }
 });
 

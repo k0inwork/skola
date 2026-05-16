@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Students } from "./pages/Students";
 import { Payments } from "./pages/Payments";
 import { CalendarView } from "./pages/Calendar";
+import { StudentProfile } from "./pages/StudentProfile";
 import { useAuthStore } from "./lib/store";
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="students" element={<Students />} />
           <Route path="calendar" element={<CalendarView />} />
+          <Route path="profile" element={<StudentProfile />} />
           <Route path="payments" element={<Payments />} />
         </Route>
       </Routes>

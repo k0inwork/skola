@@ -10,28 +10,46 @@ router.use(requireAuth);
 
 router.get("/stats", async (req, res) => {
   try {
-    const activeStudentsResult = await db.select({ count: sql<number>`count(*)` })
-      .from(students)
-      .where(eq(students.status, "active"));
-    const activeStudents = Number(activeStudentsResult[0].count);
+    const student = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+    const isStudent = req.userRole === "client";
 
-    const scheduledLessonsResult = await db.select({ count: sql<number>`count(*)` })
-      .from(lessons)
-      .where(eq(lessons.status, "scheduled"));
-    const scheduledLessons = Number(scheduledLessonsResult[0].count);
+    if (isStudent && student.length > 0) {
+        // Student view: Fetch only their data
+        const studentId = student[0].id;
+        
+        const scheduledLessonsResult = await db.select({ count: sql<number>`count(*)` })
+          .from(lessons)
+          .where(eq(lessons.studentId, studentId));
+        const scheduledLessons = Number(scheduledLessonsResult[0].count);
+        
+        res.json({
+            activeStudents: 0, // Not applicable
+            scheduledLessons,
+            pendingPayments: 0 // Not applicable or fetched differently
+        });
+    } else {
+        // Instructor/Admin view: Fetch all
+        const activeStudentsResult = await db.select({ count: sql<number>`count(*)` })
+          .from(students)
+          .where(eq(students.status, "active"));
+        const activeStudents = Number(activeStudentsResult[0].count);
 
-    // we treat "pending" payments as pending total amount maybe? Or count.
-    // Let's do the count of pending payments.
-    const pendingPaymentsResult = await db.select({ count: sql<number>`count(*)` })
-      .from(payments)
-      .where(eq(payments.status, "pending"));
-    const pendingPayments = Number(pendingPaymentsResult[0].count);
+        const scheduledLessonsResult = await db.select({ count: sql<number>`count(*)` })
+          .from(lessons)
+          .where(eq(lessons.status, "scheduled"));
+        const scheduledLessons = Number(scheduledLessonsResult[0].count);
 
-    res.json({
-      activeStudents,
-      scheduledLessons,
-      pendingPayments
-    });
+        const pendingPaymentsResult = await db.select({ count: sql<number>`count(*)` })
+          .from(payments)
+          .where(eq(payments.status, "pending"));
+        const pendingPayments = Number(pendingPaymentsResult[0].count);
+
+        res.json({
+          activeStudents,
+          scheduledLessons,
+          pendingPayments
+        });
+    }
   } catch (err) {
     console.error("Dashboard stats error:", err);
     res.status(500).json({ error: "Internal server error" });
