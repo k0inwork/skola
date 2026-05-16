@@ -1,8 +1,8 @@
 import { Outlet, Navigate, Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
-import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon, MessageCircle } from "lucide-react";
+import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon, MessageCircle, Bell, X } from "lucide-react";
 import clsx from "clsx";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 
 export function Layout() {
@@ -10,6 +10,9 @@ export function Layout() {
   const location = useLocation();
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [calendarAlerts, setCalendarAlerts] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   const isStudent = role === "client";
 
@@ -54,6 +57,28 @@ export function Layout() {
     }
   }, [location.pathname]);
 
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifDropdown(false);
+      }
+    };
+    if (showNotifDropdown) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showNotifDropdown]);
+
+  // Fetch notifications when dropdown opens
+  useEffect(() => {
+    if (!showNotifDropdown || !token || isStudent) return;
+    fetch("/api/calendar/notifications?limit=15", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then(setNotifications)
+      .catch(() => {});
+  }, [showNotifDropdown, token, isStudent]);
+
   // Reset message badge when visiting messages page
   useEffect(() => {
     if (location.pathname.startsWith("/messages")) {
@@ -97,8 +122,21 @@ export function Layout() {
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 bg-slate-900 text-white flex-col">
-        <div className="p-6">
+        <div className="p-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">Olaines autoskola</h1>
+          {!isStudent && (
+            <button
+              onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+              className="relative p-2 hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <Bell className="w-5 h-5 text-slate-400" />
+              {calendarAlerts > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  {calendarAlerts > 9 ? "9+" : calendarAlerts}
+                </span>
+              )}
+            </button>
+          )}
         </div>
 
         <nav className="flex-1 px-4 space-y-2">
@@ -130,7 +168,51 @@ export function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 p-4 md:p-8 pb-20 md:pb-8">
+      <main className="flex-1 p-4 md:p-8 pb-20 md:pb-8 relative">
+        {/* Notification dropdown (desktop) */}
+        {showNotifDropdown && !isStudent && (
+          <div ref={notifRef} className="absolute top-2 right-2 md:top-4 md:right-4 z-50 w-80 max-h-96 overflow-auto bg-white rounded-xl shadow-xl border border-gray-200">
+            <div className="sticky top-0 bg-white p-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900">Calendar Activity</h3>
+              <button onClick={() => setShowNotifDropdown(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {notifications.length === 0 ? (
+              <p className="p-4 text-sm text-gray-400 text-center">No recent activity</p>
+            ) : (
+              notifications.map((n: any) => (
+                <div key={n.id} className="px-3 py-2.5 border-b border-gray-50 flex items-start gap-2 hover:bg-gray-50">
+                  <div className={clsx(
+                    "w-2.5 h-2.5 rounded-full mt-1.5 shrink-0",
+                    n.type === "booked" ? "bg-emerald-500" :
+                    n.type === "cancelled" ? "bg-red-500" :
+                    n.type === "reschedule_pending" ? "bg-amber-500" :
+                    "bg-amber-500"
+                  )} />
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-700">
+                      <span className="font-medium">{n.studentName}</span>
+                      {" — "}
+                      <span className={clsx(
+                        "font-medium",
+                        n.type === "booked" ? "text-emerald-600" :
+                        n.type === "cancelled" ? "text-red-600" :
+                        n.type === "reschedule_pending" ? "text-amber-600" :
+                        "text-amber-600"
+                      )}>
+                        {n.type === "booked" ? "Booked" : n.type === "cancelled" ? "Cancelled" : n.type === "reschedule_pending" ? "Move Request" : "Rescheduled"}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {n.date} {n.startTime}–{n.endTime}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
         <Outlet />
       </main>
 
@@ -141,6 +223,12 @@ export function Layout() {
             <Link
               key={item.to}
               to={item.to}
+              onClick={(e) => {
+                if (item.to === "/calendar" && calendarAlerts > 0 && !isStudent) {
+                  e.preventDefault();
+                  setShowNotifDropdown(!showNotifDropdown);
+                }
+              }}
               className={clsx(
                 "flex flex-col items-center justify-center gap-0.5 flex-1 h-full relative pt-1",
                 item.match ? "text-blue-600" : "text-gray-400"

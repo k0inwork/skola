@@ -29,6 +29,11 @@ interface BookedLesson {
   amount?: string | null;
   notes?: string | null;
   location?: string | null;
+  createdAt?: string | null;
+  status?: string | null;
+  proposedDate?: string | null;
+  proposedStartTime?: string | null;
+  proposedEndTime?: string | null;
 }
 
 interface Location {
@@ -57,6 +62,9 @@ export function InstructorCalendar() {
   const [bookedLessons, setBookedLessons] = useState<BookedLesson[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+
+  // Track "last seen" for new lesson badge
+  const [lastVisited, setLastVisited] = useState<string | null>(() => localStorage.getItem("calendarLastVisited"));
 
   // Locations
   const [locations, setLocations] = useState<Location[]>([]);
@@ -144,12 +152,21 @@ export function InstructorCalendar() {
         const data = await res.json();
         setWorkingDays(data.workingDays);
         setBookedLessons(data.bookedLessons);
+        // Mark calendar as visited now
+        const now = new Date().toISOString();
+        localStorage.setItem("calendarLastVisited", now);
+        setLastVisited(now);
       }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const isNewLesson = (lesson: BookedLesson) => {
+    if (!lastVisited || !lesson.createdAt) return false;
+    return new Date(lesson.createdAt) > new Date(lastVisited);
   };
 
   const getDaySlots = (date: Date): Slot[] => {
@@ -329,52 +346,94 @@ export function InstructorCalendar() {
 
   // --- RENDER ---
 
-  const renderSlot = (slot: Slot, idx: number) => (
+  const handleRescheduleRespond = async (lessonId: string, action: "approve" | "decline") => {
+    try {
+      const res = await fetch(`/api/calendar/reschedule-lesson/${lessonId}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) {
+        fetchCalendarData();
+      } else {
+        const data = await res.json();
+        alert(data.error || `Failed to ${action} reschedule`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert(`Error ${action}ing reschedule`);
+    }
+  };
+
+  const isPendingReschedule = (lesson?: BookedLesson) => lesson?.status === "reschedule_pending";
+
+  const renderSlot = (slot: Slot, idx: number) => {
+    const pending = isPendingReschedule(slot.lesson);
+    return (
     <div
       key={idx}
-      draggable={!!slot.lesson && !isMobileDayView}
-      onDragStart={(e) => slot.lesson && handleDragStart(e, slot.lesson)}
+      draggable={!!slot.lesson && !isMobileDayView && !pending}
+      onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
       onDrop={(e) => handleDrop(e, slot)}
       onDragOver={handleDragOver}
-      onClick={() => slot.lesson && setSelectedSlot(slot)}
+      onClick={() => slot.lesson && !pending && setSelectedSlot(slot)}
       className={clsx(
         "rounded-lg transition-all duration-200 relative group overflow-hidden border",
         isMobileDayView ? "p-3" : "p-2.5 text-xs",
-        slot.isAvailable
-          ? draggedLesson
-            ? "bg-white shadow-sm border-dashed border-blue-300 cursor-drop hover:border-blue-400 hover:bg-blue-50/30"
-            : "bg-white shadow-sm border-gray-200 cursor-default"
-          : "bg-gray-50 border-gray-100 shadow-sm opacity-90 cursor-pointer hover:bg-gray-100",
-        slot.lesson && !isMobileDayView && "cursor-grab active:cursor-grabbing"
+        pending
+          ? "bg-amber-50 border-amber-300 shadow-sm border-dashed"
+          : slot.isAvailable
+            ? draggedLesson
+              ? "bg-white shadow-sm border-dashed border-blue-300 cursor-drop hover:border-blue-400 hover:bg-blue-50/30"
+              : "bg-white shadow-sm border-gray-200 cursor-default"
+            : "bg-gray-50 border-gray-100 shadow-sm opacity-90 cursor-pointer hover:bg-gray-100",
+        slot.lesson && !isMobileDayView && !pending && "cursor-grab active:cursor-grabbing"
       )}
     >
       <div className={clsx("flex items-center gap-2 mb-1", isMobileDayView && "mb-2")}>
         <div className={clsx(
           "rounded-full shadow-sm shrink-0",
           isMobileDayView ? "w-3 h-3" : "w-2.5 h-2.5",
+          pending ? "bg-amber-500 shadow-amber-500/40 animate-pulse" :
           slot.isAvailable ? "bg-emerald-500 shadow-emerald-500/40" : "bg-gray-800 shadow-gray-900/40"
         )} />
         <span className={clsx(
           "font-semibold",
           isMobileDayView ? "text-sm" : "text-xs",
+          pending ? "text-amber-700" :
           slot.isAvailable ? "text-gray-900" : "text-gray-500 line-through decoration-gray-300"
         )}>
           {slot.time} - {slot.endTime}
         </span>
-        {slot.lesson && !isMobileDayView && (
+        {pending && (
+          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full shrink-0 ml-auto">MOVE REQ</span>
+        )}
+        {slot.lesson && !isMobileDayView && !pending && (
           <GripVertical className="w-3 h-3 text-gray-400 ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
         )}
       </div>
 
       {!slot.isAvailable && slot.lesson && (
         <div className={clsx(
-          "flex flex-col gap-1 text-gray-700 bg-white rounded p-2 border border-blue-100 shadow-sm",
-          !isMobileDayView && "ml-4"
+          "flex flex-col gap-1 text-gray-700 bg-white rounded p-2 border shadow-sm",
+          pending ? "border-amber-200" : "border-blue-100",
+          !isMobileDayView && "ml-4",
+          isNewLesson(slot.lesson) && "ring-2 ring-blue-400 ring-offset-1"
         )}>
           <div className="flex items-center gap-1.5 font-medium text-gray-900">
             <UserIcon className={clsx("shrink-0 text-blue-400", isMobileDayView ? "w-4 h-4" : "w-3.5 h-3.5")} />
             <span className="truncate">{slot.lesson.studentFirstName} {slot.lesson.studentLastName}</span>
+            {isNewLesson(slot.lesson) && !pending && (
+              <span className="ml-auto text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full shrink-0">NEW</span>
+            )}
           </div>
+
+          {pending && slot.lesson.proposedDate && (
+            <div className="text-[10px] text-amber-600 font-medium bg-amber-50 rounded px-1.5 py-1">
+              Wants → {slot.lesson.proposedDate} {slot.lesson.proposedStartTime}–{slot.lesson.proposedEndTime}
+            </div>
+          )}
+
           <div className="flex items-center gap-2 flex-wrap">
             {slot.lesson.paid && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
             {slot.lesson.amount && (
@@ -386,10 +445,28 @@ export function InstructorCalendar() {
               </span>
             )}
           </div>
+
+          {pending && (
+            <div className="flex gap-1.5 mt-1" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => handleRescheduleRespond(slot.lesson!.id, "approve")}
+                className="flex-1 text-[10px] font-medium bg-emerald-600 text-white px-2 py-1.5 rounded hover:bg-emerald-700 transition min-h-[32px]"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => handleRescheduleRespond(slot.lesson!.id, "decline")}
+                className="flex-1 text-[10px] font-medium bg-red-100 text-red-700 px-2 py-1.5 rounded hover:bg-red-200 transition min-h-[32px]"
+              >
+                Decline
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   const renderWeekView = () => (
     <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-auto">

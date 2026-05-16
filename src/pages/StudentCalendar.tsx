@@ -25,6 +25,11 @@ interface BookedLesson {
   studentEmail?: string | null;
   studentPhone?: string | null;
   location?: string | null;
+  isMine?: boolean;
+  status?: string | null;
+  proposedDate?: string | null;
+  proposedStartTime?: string | null;
+  proposedEndTime?: string | null;
 }
 
 interface Slot {
@@ -40,11 +45,11 @@ export function StudentCalendar() {
   const { token } = useAuthStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedInstructor, setSelectedInstructor] = useState("");
-  
+
   const [workingDays, setWorkingDays] = useState<WorkingDay[]>([]);
   const [bookedLessons, setBookedLessons] = useState<BookedLesson[]>([]);
   const [loading, setLoading] = useState(false);
-  
+
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [bookingSlot, setBookingSlot] = useState<Slot | null>(null);
 
@@ -83,7 +88,7 @@ export function StudentCalendar() {
     try {
       const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
       const weekEnd = addDays(weekStart, 6);
-      
+
       const startStr = format(weekStart, "yyyy-MM-dd");
       const endStr = format(weekEnd, "yyyy-MM-dd");
 
@@ -106,7 +111,7 @@ export function StudentCalendar() {
     const dateStr = format(date, "yyyy-MM-dd");
     const workingDay = workingDays.find(d => d.date === dateStr);
 
-    // Explicitly set as off → only show existing booked lessons, no bookable slots
+    // Explicitly set as off -> only show existing booked lessons, no bookable slots
     if (workingDay && !workingDay.isWorking) {
       const dayLessons = bookedLessons.filter(l => l.date === dateStr);
       return dayLessons.map(l => ({
@@ -114,7 +119,7 @@ export function StudentCalendar() {
         time: l.startTime,
         endTime: l.endTime,
         isAvailable: false,
-        isMine: !!(l as any).isMine,
+        isMine: !!l.isMine,
         lesson: l,
       }));
     }
@@ -130,23 +135,23 @@ export function StudentCalendar() {
     let current = addMinutes(baseDate, startH * 60 + startM);
 
     for (let i = 0; i < 6; i++) {
-        const timeStr = format(current, "HH:mm");
-        const nextTime = addMinutes(current, slotDuration);
-        const endTimeStr = format(nextTime, "HH:mm");
+      const timeStr = format(current, "HH:mm");
+      const nextTime = addMinutes(current, slotDuration);
+      const endTimeStr = format(nextTime, "HH:mm");
 
-        const lesson = bookedLessons.find(l => l.date === dateStr && l.startTime < endTimeStr && l.endTime > timeStr);
-        const isAvailable = !lesson;
+      const lesson = bookedLessons.find(l => l.date === dateStr && l.startTime < endTimeStr && l.endTime > timeStr);
+      const isAvailable = !lesson;
 
-        slots.push({
-            date: dateStr,
-            time: timeStr,
-            endTime: endTimeStr,
-            isAvailable: isAvailable,
-            isMine: !!(lesson as any)?.isMine,
-            lesson
-        });
+      slots.push({
+        date: dateStr,
+        time: timeStr,
+        endTime: endTimeStr,
+        isAvailable: isAvailable,
+        isMine: !!lesson?.isMine,
+        lesson
+      });
 
-        current = nextTime;
+      current = nextTime;
     }
     return slots;
   };
@@ -179,7 +184,6 @@ export function StudentCalendar() {
       return;
     }
 
-    console.log("Booking slot:", bookingSlot);
     try {
       const res = await fetch("/api/calendar/book", {
         method: "POST",
@@ -191,13 +195,11 @@ export function StudentCalendar() {
           endTime: bookingSlot.endTime,
         })
       });
-      console.log("Response:", res.status, res.statusText);
       if (res.ok) {
         setIsBookingOpen(false);
         fetchCalendarData();
       } else {
         const body = await res.json();
-        console.error("Booking error body:", body);
         alert(body.error || "Booking failed");
       }
     } catch (err) {
@@ -214,13 +216,13 @@ export function StudentCalendar() {
         <div className="flex gap-4">
           <div className="flex items-center gap-2">
             <button onClick={() => setCurrentDate(addDays(currentDate, -7))} className="p-1 hover:bg-gray-100 rounded text-gray-600">
-                <ChevronLeft className="w-5 h-5"/>
+              <ChevronLeft className="w-5 h-5"/>
             </button>
             <span className="text-sm font-medium px-4">
-                {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d, yyyy")}
+              {format(weekStart, "MMM d")} - {format(addDays(weekStart, 6), "MMM d, yyyy")}
             </span>
             <button onClick={() => setCurrentDate(addDays(currentDate, 7))} className="p-1 hover:bg-gray-100 rounded text-gray-600">
-                <ChevronRight className="w-5 h-5"/>
+              <ChevronRight className="w-5 h-5"/>
             </button>
           </div>
         </div>
@@ -233,55 +235,69 @@ export function StudentCalendar() {
             const slotList = getDaySlots(d);
             return (
               <div key={i} className="flex flex-col p-2 gap-2">
-                 <div className="text-sm font-medium text-center p-2 border-b border-gray-100">{format(d, "EEE d")}</div>
-                 {slotList.map((slot, idx) => (
-                    <button 
+                <div className="text-sm font-medium text-center p-2 border-b border-gray-100">{format(d, "EEE d")}</div>
+                {slotList.map((slot, idx) => {
+                  const isPending = slot.lesson?.status === "reschedule_pending";
+                  return (
+                    <button
                       key={idx}
                       disabled={!slot.isAvailable && !slot.isMine}
                       onClick={() => handleSlotClick(slot)}
                       className={clsx(
                         "p-2 text-xs rounded-lg text-left transition-all",
-                        slot.isAvailable ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800" : 
-                        slot.isMine ? "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300" :
-                        "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        isPending && slot.isMine
+                          ? "bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 border-dashed"
+                          : slot.isAvailable
+                            ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800"
+                            : slot.isMine
+                              ? "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300"
+                              : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       )}
                     >
                       <div className="font-bold">{slot.time}</div>
                       <div className="flex justify-between items-center overflow-hidden">
-                        <span>{slot.isAvailable ? "Book" : slot.isMine ? "My Lesson" : "Taken"}</span>
+                        <span>{slot.isAvailable ? "Book" : isPending && slot.isMine ? "Move Pending" : slot.isMine ? "My Lesson" : "Taken"}</span>
                         {!slot.isAvailable && slot.lesson?.location && (
-                          <span className="text-[10px] bg-white/50 px-1 rounded truncate max-w-[50%] ml-1">📍 {slot.lesson.location}</span>
+                          <span className="text-[10px] bg-white/50 px-1 rounded truncate max-w-[50%] ml-1">
+                            {"\uD83D\uDCCD"} {slot.lesson.location}
+                          </span>
                         )}
                       </div>
+                      {isPending && slot.isMine && slot.lesson?.proposedDate && (
+                        <div className="text-[9px] text-amber-600 mt-0.5 font-medium">
+                          {"\u2192"} {slot.lesson.proposedDate} {slot.lesson.proposedStartTime}{"\u2013"}{slot.lesson.proposedEndTime}
+                        </div>
+                      )}
                     </button>
-                 ))}
+                  );
+                })}
               </div>
-            )
+            );
           })}
         </div>
       </div>
-      
+
       {isBookingOpen && bookingSlot && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6 relative">
-             <h3 className="text-lg font-bold mb-2">
-               {bookingSlot.isMine ? "Cancel Lesson?" : "Confirm booking?"}
-             </h3>
-             <p className="text-sm text-gray-500 mb-4">
-               {bookingSlot.date} at {bookingSlot.time}
-             </p>
-             <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setIsBookingOpen(false)} className="px-4 py-2 text-gray-600">No, go back</button>
-                <button 
-                  onClick={handleBookSlot} 
-                  className={clsx(
-                    "px-4 py-2 rounded font-medium text-white",
-                    bookingSlot.isMine ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
-                  )}
-                >
-                  {bookingSlot.isMine ? "Yes, Cancel" : "Yes, Confirm"}
-                </button>
-             </div>
+            <h3 className="text-lg font-bold mb-2">
+              {bookingSlot.isMine ? "Cancel Lesson?" : "Confirm booking?"}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {bookingSlot.date} at {bookingSlot.time}
+            </p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setIsBookingOpen(false)} className="px-4 py-2 text-gray-600">No, go back</button>
+              <button
+                onClick={handleBookSlot}
+                className={clsx(
+                  "px-4 py-2 rounded font-medium text-white",
+                  bookingSlot.isMine ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
+                )}
+              >
+                {bookingSlot.isMine ? "Yes, Cancel" : "Yes, Confirm"}
+              </button>
+            </div>
           </div>
         </div>
       )}

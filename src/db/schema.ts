@@ -71,10 +71,13 @@ export const lessons = pgTable("lessons", {
   location: text("location"),
   vehicle: text("vehicle"),
   notes: text("notes"),
-  status: text("status").default("scheduled"),
+  status: text("status").default("scheduled"), // scheduled, rescheduled, reschedule_pending, canceled
   paid: boolean("paid").default(false),
   amount: text("amount"),
   outcome: text("outcome"),
+  proposedDate: text("proposed_date"),
+  proposedStartTime: text("proposed_start_time"),
+  proposedEndTime: text("proposed_end_time"),
   createdAt: timestamp("created_at")
     .notNull()
     .defaultNow(),

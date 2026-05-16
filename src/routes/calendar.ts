@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, gte, lte, inArray } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, desc, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { instructorWorkingDays, lessons, users, students, enrollments } from "../db/schema.js";
 import { locations } from "../db/schema.js";
@@ -103,6 +103,11 @@ router.get("/slots", async (req, res) => {
       amount: lessons.amount,
       notes: lessons.notes,
       location: lessons.location,
+      status: lessons.status,
+      proposedDate: lessons.proposedDate,
+      proposedStartTime: lessons.proposedStartTime,
+      proposedEndTime: lessons.proposedEndTime,
+      createdAt: lessons.createdAt,
     })
     .from(lessons)
     .leftJoin(students, eq(lessons.studentId, students.id))
@@ -110,7 +115,7 @@ router.get("/slots", async (req, res) => {
       eq(lessons.instructorId, instructorId),
       gte(lessons.date, startDate),
       lte(lessons.date, endDate),
-      inArray(lessons.status, ["scheduled", "rescheduled"])
+      inArray(lessons.status, ["scheduled", "rescheduled", "reschedule_pending"])
     ));
 
     const bookedLessons = bookedLessonsRaw.map(lesson => {
@@ -380,7 +385,7 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
     const existing = await db.select().from(lessons).where(and(
       eq(lessons.instructorId, lesson.instructorId),
       eq(lessons.date, date),
-      inArray(lessons.status, ["scheduled", "rescheduled"])
+      inArray(lessons.status, ["scheduled", "rescheduled", "reschedule_pending"])
     ));
 
     const overlap = existing.some(l => (
@@ -392,18 +397,243 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
       return;
     }
 
-    await db.update(lessons)
-      .set({ date, startTime, endTime, status: "rescheduled" })
-      .where(eq(lessons.id, lessonId));
+    const oldDate = lesson.date;
+    const oldTime = `${lesson.startTime}-${lesson.endTime}`;
+    const { messages: msgs } = await import("../db/schema.js");
 
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("calendar_update", { instructorId: lesson.instructorId, date });
+    if (req.userRole === "client") {
+      // Student requests reschedule — instructor must approve
+      await db.update(lessons)
+        .set({
+          status: "reschedule_pending",
+          proposedDate: date,
+          proposedStartTime: startTime,
+          proposedEndTime: endTime,
+        })
+        .where(eq(lessons.id, lessonId));
+
+      const [student] = lesson.studentId
+        ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
+        : [null];
+
+      const studentName = student ? `${student.firstName} ${student.lastName}` : "Student";
+      const content = `${studentName} requested to reschedule: ${oldDate} (${oldTime}) → ${date} (${startTime}-${endTime})`;
+
+      const [msg] = await db.insert(msgs).values({
+        senderId: req.userId!,
+        recipientId: lesson.instructorId,
+        content,
+        type: "reschedule_request",
+        lessonId: lessonId,
+        proposedDate: date,
+        proposedStartTime: startTime,
+        proposedEndTime: endTime,
+      }).returning();
+
+      const io = req.app.get("io");
+      if (io) {
+        if (msg) io.emit("new_message", { message: msg, recipientId: lesson.instructorId });
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date });
+      }
+
+      res.json({ success: true, pending: true });
+    } else {
+      // Instructor/admin reschedules instantly
+      await db.update(lessons)
+        .set({ date, startTime, endTime, status: "rescheduled" })
+        .where(eq(lessons.id, lessonId));
+
+      const [student] = lesson.studentId
+        ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
+        : [null];
+
+      const content = `Lesson rescheduled by Instructor: ${oldDate} (${oldTime}) → ${date} (${startTime}-${endTime})`;
+
+      const [msg] = await db.insert(msgs).values({
+        senderId: req.userId!,
+        recipientId: student?.userId!,
+        content,
+        type: "reschedule_approved",
+        lessonId: lessonId,
+      }).returning();
+
+      const io = req.app.get("io");
+      if (io) {
+        if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date });
+      }
+
+      res.json({ success: true });
+    }
+  } catch (err) {
+    console.error("Reschedule lesson error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Instructor approves/declines a pending reschedule
+router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+    const { action } = req.body; // "approve" or "decline"
+
+    if (!action || !["approve", "decline"].includes(action)) {
+      res.status(400).json({ error: "action must be 'approve' or 'decline'" });
+      return;
+    }
+
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
+    if (!lesson) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    if (lesson.status !== "reschedule_pending") {
+      res.status(400).json({ error: "Lesson is not pending reschedule" });
+      return;
+    }
+
+    const { messages: msgs } = await import("../db/schema.js");
+    const [student] = lesson.studentId
+      ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
+      : [null];
+
+    const oldSlot = `${lesson.date} (${lesson.startTime}-${lesson.endTime})`;
+    const newSlot = `${lesson.proposedDate} (${lesson.proposedStartTime}-${lesson.proposedEndTime})`;
+
+    if (action === "approve") {
+      // Check overlap at proposed time
+      const existing = await db.select().from(lessons).where(and(
+        eq(lessons.instructorId, lesson.instructorId),
+        eq(lessons.date, lesson.proposedDate!),
+        inArray(lessons.status, ["scheduled", "rescheduled"])
+      ));
+      const overlap = existing.some(l => l.id !== lessonId && l.startTime < lesson.proposedEndTime! && l.endTime > lesson.proposedStartTime!);
+      if (overlap) {
+        res.status(409).json({ error: "Target slot is already booked." });
+        return;
+      }
+
+      await db.update(lessons)
+        .set({
+          date: lesson.proposedDate!,
+          startTime: lesson.proposedStartTime!,
+          endTime: lesson.proposedEndTime!,
+          status: "rescheduled",
+          proposedDate: null,
+          proposedStartTime: null,
+          proposedEndTime: null,
+        })
+        .where(eq(lessons.id, lessonId));
+
+      const content = `Reschedule approved! ${oldSlot} → ${newSlot}`;
+
+      const [msg] = await db.insert(msgs).values({
+        senderId: req.userId!,
+        recipientId: student?.userId!,
+        content,
+        type: "reschedule_approved",
+        lessonId,
+      }).returning();
+
+      const io = req.app.get("io");
+      if (io) {
+        if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.proposedDate });
+      }
+    } else {
+      // Decline — revert lesson to original scheduled status
+      await db.update(lessons)
+        .set({
+          status: "scheduled",
+          proposedDate: null,
+          proposedStartTime: null,
+          proposedEndTime: null,
+        })
+        .where(eq(lessons.id, lessonId));
+
+      const content = `Reschedule request declined. ${oldSlot} → ${newSlot} was not approved.`;
+
+      const [msg] = await db.insert(msgs).values({
+        senderId: req.userId!,
+        recipientId: student?.userId!,
+        content,
+        type: "reschedule_declined",
+        lessonId,
+      }).returning();
+
+      const io = req.app.get("io");
+      if (io) {
+        if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+      }
     }
 
     res.json({ success: true });
   } catch (err) {
-    console.error("Reschedule lesson error:", err);
+    console.error("Respond to reschedule error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get recent calendar notifications (for admin/instructor)
+router.get("/notifications", async (req, res) => {
+  try {
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 15, 30);
+
+    const recentLessons = await db.select({
+      id: lessons.id,
+      date: lessons.date,
+      startTime: lessons.startTime,
+      endTime: lessons.endTime,
+      status: lessons.status,
+      studentFirstName: students.firstName,
+      studentLastName: students.lastName,
+      createdAt: lessons.createdAt,
+      updatedAt: lessons.updatedAt,
+    })
+      .from(lessons)
+      .leftJoin(students, eq(lessons.studentId, students.id))
+      .orderBy(desc(lessons.updatedAt || lessons.createdAt))
+      .limit(limit);
+
+    const notifications = recentLessons.map(l => {
+      let type: "booked" | "cancelled" | "rescheduled" | "reschedule_pending";
+      if (l.status === "canceled") {
+        type = "cancelled";
+      } else if (l.status === "reschedule_pending") {
+        type = "reschedule_pending";
+      } else if (l.status === "rescheduled") {
+        type = "rescheduled";
+      } else {
+        type = "booked";
+      }
+
+      return {
+        id: l.id,
+        type,
+        date: l.date,
+        startTime: l.startTime,
+        endTime: l.endTime,
+        studentName: `${l.studentFirstName} ${l.studentLastName}`,
+        createdAt: l.createdAt,
+        updatedAt: l.updatedAt,
+      };
+    });
+
+    res.json(notifications);
+  } catch (err) {
+    console.error("Get notifications error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
