@@ -133,7 +133,7 @@ router.get("/google/callback", async (req, res) => {
                 window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', payload: payload }, '*'); 
                 window.close();
               } else {
-                window.location.href = '/';
+                window.location.href = '${config.APP_URL || "/"}/';
               }
             })();
           </script>
