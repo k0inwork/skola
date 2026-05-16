@@ -108,9 +108,9 @@ export function StudentProfile() {
                 <div className="text-right">
                     <p className="text-xs text-gray-500 uppercase font-semibold">Total Paid Lessons Value</p>
                     <p className="text-xl font-bold text-emerald-600">
-                        {lessons.filter(l => l.paid).length * 30} EUR
+                        {lessons.filter(l => l.paid).reduce((sum: number, l: any) => sum + (parseFloat(l.amount) || 30), 0).toFixed(2)} EUR
                     </p>
-                    <p className="text-[10px] text-gray-400">Calculated at 30 EUR/lesson</p>
+                    <p className="text-[10px] text-gray-400">Sum of paid lesson amounts</p>
                 </div>
             </div>
             

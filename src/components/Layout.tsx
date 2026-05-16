@@ -56,8 +56,20 @@ export function Layout() {
             <CalendarIcon className={clsx("w-5 h-5", location.pathname === "/calendar" ? "text-white" : "text-slate-500")} />
             Calendar
           </Link>
-          <Link 
-            to="/profile" 
+          {!isStudent && (
+            <Link
+              to="/payments"
+              className={clsx(
+                "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
+                location.pathname === "/payments" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
+              )}
+            >
+              <CreditCard className={clsx("w-5 h-5", location.pathname === "/payments" ? "text-white" : "text-slate-500")} />
+              Payments
+            </Link>
+          )}
+          <Link
+            to="/profile"
             className={clsx(
               "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
               location.pathname === "/profile" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"

@@ -73,6 +73,7 @@ export const lessons = pgTable("lessons", {
   notes: text("notes"),
   status: text("status").default("scheduled"),
   paid: boolean("paid").default(false),
+  amount: text("amount"),
   outcome: text("outcome"),
   createdAt: timestamp("created_at")
     .notNull()
@@ -127,6 +128,19 @@ export const progress = pgTable("progress", {
   result: text("result"),
   achievedAt: text("achieved_at"),
   comment: text("comment"),
+});
+
+export const locations = pgTable("locations", {
+  id: uuid("id")
+    .primaryKey()
+    .defaultRandom(),
+  name: text("name").notNull(),
+  address: text("address"),
+  lat: text("latitude"),
+  lng: text("longitude"),
+  createdAt: timestamp("created_at")
+    .notNull()
+    .defaultNow(),
 });
 
 export const notes = pgTable("notes", {

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { instructorWorkingDays, lessons, users, students, enrollments } from "../db/schema.js";
+import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -100,6 +101,7 @@ router.get("/slots", async (req, res) => {
       studentEmail: students.email,
       studentPhone: students.phone,
       paid: lessons.paid,
+      amount: lessons.amount,
       notes: lessons.notes,
       location: lessons.location,
     })
@@ -257,15 +259,15 @@ router.post("/mark-lesson-paid", async (req, res) => {
 router.post("/update-lesson/:lessonId", async (req, res) => {
   try {
     const { lessonId } = req.params;
-    const { notes, location } = req.body;
-    
+    const { notes, location, amount } = req.body;
+
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
     await db.update(lessons)
-      .set({ notes, location })
+      .set({ notes, location, amount: amount || null })
       .where(eq(lessons.id, lessonId));
 
     const io = req.app.get("io");
@@ -311,6 +313,108 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Cancel lesson error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Reschedule a lesson to a new date/time
+router.post("/reschedule-lesson/:lessonId", async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+    const { date, startTime, endTime } = req.body;
+
+    if (!date || !startTime || !endTime) {
+      res.status(400).json({ error: "date, startTime, and endTime are required" });
+      return;
+    }
+
+    const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
+    if (!lesson) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    // Permission check
+    if (req.userRole === "client") {
+      const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+      if (!student || lesson.studentId !== student.id) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+    }
+
+    // Check for overlap at new time
+    const existing = await db.select().from(lessons).where(and(
+      eq(lessons.instructorId, lesson.instructorId),
+      eq(lessons.date, date),
+      inArray(lessons.status, ["scheduled", "rescheduled"])
+    ));
+
+    const overlap = existing.some(l => (
+      l.id !== lessonId && l.startTime < endTime && l.endTime > startTime
+    ));
+
+    if (overlap) {
+      res.status(409).json({ error: "Target slot is already booked." });
+      return;
+    }
+
+    await db.update(lessons)
+      .set({ date, startTime, endTime, status: "rescheduled" })
+      .where(eq(lessons.id, lessonId));
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId: lesson.instructorId, date });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Reschedule lesson error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Locations CRUD
+router.get("/locations", async (req, res) => {
+  try {
+    const allLocations = await db.select().from(locations).orderBy(locations.name);
+    res.json(allLocations);
+  } catch (err) {
+    console.error("List locations error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/locations", async (req, res) => {
+  try {
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const { name, address, lat, lng } = req.body;
+    if (!name) {
+      res.status(400).json({ error: "Name is required" });
+      return;
+    }
+    const [loc] = await db.insert(locations).values({ name, address, lat, lng }).returning();
+    res.status(201).json(loc);
+  } catch (err) {
+    console.error("Create location error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/locations/:id", async (req, res) => {
+  try {
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    await db.delete(locations).where(eq(locations.id, req.params.id));
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete location error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
