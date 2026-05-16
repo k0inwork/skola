@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "../lib/store";
-import { Plus, Search, User as UserIcon } from "lucide-react";
+import { Plus, Search, User as UserIcon, X } from "lucide-react";
 
 interface Student {
   id: string;
@@ -15,6 +15,10 @@ interface Student {
 export function Students() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newStudent, setNewStudent] = useState({ firstName: "", lastName: "", email: "", phone: "" });
+  const [saving, setSaving] = useState(false);
+  
   const token = useAuthStore((s) => s.token);
 
   useEffect(() => {
@@ -39,6 +43,33 @@ export function Students() {
     }
   };
 
+  const handleAddStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await fetch("/api/students", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(newStudent),
+      });
+      if (res.ok) {
+        setIsAddModalOpen(false);
+        setNewStudent({ firstName: "", lastName: "", email: "", phone: "" });
+        fetchStudents();
+      } else {
+        alert("Failed to add student");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -46,11 +77,86 @@ export function Students() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Students</h1>
           <p className="mt-1 text-gray-500">Manage your students and their progress.</p>
         </div>
-        <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
+        <button 
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition"
+        >
           <Plus className="w-4 h-4" />
           Add Student
         </button>
       </div>
+
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 relative">
+            <button 
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Add New Student</h2>
+            <form onSubmit={handleAddStudent} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <input 
+                    required
+                    type="text" 
+                    value={newStudent.firstName}
+                    onChange={(e) => setNewStudent(s => ({...s, firstName: e.target.value}))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <input 
+                    required
+                    type="text" 
+                    value={newStudent.lastName}
+                    onChange={(e) => setNewStudent(s => ({...s, lastName: e.target.value}))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input 
+                  type="email" 
+                  value={newStudent.email}
+                  onChange={(e) => setNewStudent(s => ({...s, email: e.target.value}))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input 
+                  type="text" 
+                  value={newStudent.phone}
+                  onChange={(e) => setNewStudent(s => ({...s, phone: e.target.value}))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div className="pt-4 flex justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={saving}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save Student"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-100 flex gap-4">
