@@ -72,6 +72,7 @@ export const lessons = sqliteTable("lessons", {
   vehicle: text("vehicle"),
   notes: text("notes"),
   status: text("status", { enum: ["scheduled", "completed", "canceled", "missed", "rescheduled"] }).default("scheduled"),
+  paid: integer("paid", { mode: "boolean" }).default(false),
   outcome: text("outcome"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

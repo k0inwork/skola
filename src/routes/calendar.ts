@@ -94,6 +94,7 @@ router.get("/slots", async (req, res) => {
       studentLastName: students.lastName,
       studentEmail: students.email,
       studentPhone: students.phone,
+      paid: lessons.paid,
     })
     .from(lessons)
     .leftJoin(students, eq(lessons.studentId, students.id))
@@ -202,6 +203,30 @@ router.post("/book", async (req, res) => {
     res.json(lesson);
   } catch (err) {
     console.error("Book lesson error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/mark-lesson-paid", async (req, res) => {
+  try {
+    const { lessonId, studentId } = req.body;
+    
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    await db.update(lessons)
+      .set({ paid: true })
+      .where(eq(lessons.id, lessonId));
+      
+    await db.update(students)
+      .set({ status: "active" })
+      .where(eq(students.id, studentId));
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Mark lesson paid error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

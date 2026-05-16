@@ -34,6 +34,7 @@ interface BookedLesson {
   studentEmail?: string | null;
   studentPhone?: string | null;
   isMine?: boolean;
+  paid?: boolean | null;
 }
 
 interface Slot {
@@ -47,7 +48,6 @@ interface Slot {
 export function InstructorCalendar() {
   const { token, role } = useAuthStore();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [instructors, setInstructors] = useState<any[]>([]);
   const [selectedInstructor, setSelectedInstructor] = useState("");
   
   const [workingDays, setWorkingDays] = useState<WorkingDay[]>([]);
@@ -69,7 +69,6 @@ export function InstructorCalendar() {
       .then(r => r.json())
       .then(data => {
         const insts = data.filter((u: any) => u.role === "instructor" || u.role === "admin");
-        setInstructors(insts);
         if (insts.length > 0) setSelectedInstructor(insts[0].id);
       })
       .catch(console.error);
@@ -196,6 +195,25 @@ export function InstructorCalendar() {
     }
   };
 
+  const handleMarkPaid = async (lessonId: string, studentId: string | null) => {
+    if (!studentId) return;
+    try {
+      const res = await fetch("/api/calendar/mark-lesson-paid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ lessonId, studentId })
+      });
+      if (res.ok) {
+        fetchCalendarData();
+      } else {
+        alert("Failed to mark as paid");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error marking as paid");
+    }
+  };
+
   return (
     <div className="space-y-6 h-full flex flex-col pb-8">
       <div className="flex justify-between items-center shrink-0">
@@ -204,15 +222,6 @@ export function InstructorCalendar() {
           <p className="mt-1 text-gray-500">Manage availability and lessons.</p>
         </div>
         <div className="flex gap-4">
-          <select 
-            value={selectedInstructor}
-            onChange={(e) => setSelectedInstructor(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-blue-500 outline-none"
-          >
-            {instructors.map(ins => (
-              <option key={ins.id} value={ins.id}>{ins.email} ({ins.role})</option>
-            ))}
-          </select>
           <div className="flex items-center gap-2">
             <button 
               onClick={() => setCurrentDate(new Date())}
@@ -297,6 +306,18 @@ export function InstructorCalendar() {
                             <span className="truncate">{slot.lesson.studentFirstName} {slot.lesson.studentLastName}</span>
                           </div>
                       
+                          {slot.lesson.paid ? (
+                              <div className="text-xs text-emerald-600 font-medium">Lesson was paid</div>
+                          ) : (
+                            isAfter(new Date(), parseISO(`${slot.lesson.date}T${slot.lesson.endTime}`)) && (
+                                <button
+                                  onClick={() => handleMarkPaid(slot.lesson!.id, slot.lesson!.studentId)}
+                                  className="mt-1 text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700 transition"
+                                >
+                                  Lesson was paid
+                                </button>
+                            )
+                          )}
                         </div>
                       )}
                     </div>

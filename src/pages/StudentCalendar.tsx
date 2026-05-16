@@ -36,7 +36,6 @@ interface Slot {
 export function StudentCalendar() {
   const { token } = useAuthStore();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [instructors, setInstructors] = useState<any[]>([]);
   const [selectedInstructor, setSelectedInstructor] = useState("");
   
   const [workingDays, setWorkingDays] = useState<WorkingDay[]>([]);
@@ -51,7 +50,6 @@ export function StudentCalendar() {
       .then(r => r.json())
       .then(data => {
         const insts = data.filter((u: any) => u.role === "instructor" || u.role === "admin");
-        setInstructors(insts);
         if (insts.length > 0) setSelectedInstructor(insts[0].id);
       })
       .catch(console.error);
@@ -167,16 +165,6 @@ export function StudentCalendar() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Book Lessons</h1>
         </div>
         <div className="flex gap-4">
-             {/* Instructors Select */}
-          <select 
-            value={selectedInstructor}
-            onChange={(e) => setSelectedInstructor(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-blue-500 outline-none"
-          >
-            {instructors.map(ins => (
-              <option key={ins.id} value={ins.id}>{ins.email}</option>
-            ))}
-          </select>
           <div className="flex items-center gap-2">
             <button onClick={() => setCurrentDate(addDays(currentDate, -7))} className="p-1 hover:bg-gray-100 rounded text-gray-600">
                 <ChevronLeft className="w-5 h-5"/>
