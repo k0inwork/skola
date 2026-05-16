@@ -7,7 +7,7 @@ const SECRET = config.JWT_SECRET || "fallback_secret_for_development";
 const REFRESH_SECRET = config.JWT_REFRESH_SECRET || "fallback_refresh_secret";
 
 export function generateTokenPair(payload: { userId: string; role: string }) {
-  const accessToken = jwt.sign(payload, SECRET, { expiresIn: "15m" });
+  const accessToken = jwt.sign(payload, SECRET, { expiresIn: "8h" });
   const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: "7d" });
   return { accessToken, refreshToken };
 }
