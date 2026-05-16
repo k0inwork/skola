@@ -69,10 +69,15 @@ router.get("/stats", async (req, res) => {
           );
         const scheduledLessons = Number(scheduledLessonsResult[0].count);
 
+        const pendingPaymentsResult = await db.select({ count: sql<number>`count(*)` })
+          .from(payments)
+          .where(eq(payments.status, "pending"));
+        const pendingPayments = Number(pendingPaymentsResult[0].count);
+
         res.json({
           activeStudents,
           scheduledLessons,
-          pendingPayments: 0
+          pendingPayments
         });
     }
   } catch (err) {

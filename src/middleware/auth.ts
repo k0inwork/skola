@@ -1,17 +1,19 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_development";
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "fallback_refresh_secret";
+import { config } from "../lib/config.js";
+
+const SECRET = config.JWT_SECRET || "fallback_secret_for_development";
+const REFRESH_SECRET = config.JWT_REFRESH_SECRET || "fallback_refresh_secret";
 
 export function generateTokenPair(payload: { userId: string; role: string }) {
-  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" });
-  const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "7d" });
+  const accessToken = jwt.sign(payload, SECRET, { expiresIn: "15m" });
+  const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: "7d" });
   return { accessToken, refreshToken };
 }
 
 export function verifyToken(token: string, isRefresh = false) {
-  return jwt.verify(token, isRefresh ? JWT_REFRESH_SECRET : JWT_SECRET) as { userId: string; role: string };
+  return jwt.verify(token, isRefresh ? REFRESH_SECRET : SECRET) as { userId: string; role: string };
 }
 
 declare global {

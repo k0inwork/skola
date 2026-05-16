@@ -59,14 +59,18 @@ export function InstructorCalendar() {
   });
 
   useEffect(() => {
-    fetch("/api/users")
-      .then(r => r.json())
+    if (!token) return;
+    fetch("/api/users", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
+        if (!data || !Array.isArray(data)) return;
         const insts = data.filter((u: any) => u.role === "instructor" || u.role === "admin");
         if (insts.length > 0) setSelectedInstructor(insts[0].id);
       })
       .catch(console.error);
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (selectedInstructor) {
@@ -396,6 +400,22 @@ export function InstructorCalendar() {
                 )}
                 
                 <button
+                  onClick={async () => {
+                    if (confirm("Are you sure you want to cancel this lesson?")) {
+                      const res = await fetch(`/api/calendar/cancel-lesson/${selectedSlot.lesson!.id}`, {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      if (res.ok) setSelectedSlot(null);
+                      else alert("Failed to cancel lesson");
+                    }
+                  }}
+                  className="w-full mt-2 bg-red-50 text-red-600 px-4 py-2 rounded hover:bg-red-100 transition text-sm font-medium border border-red-100"
+                >
+                  Cancel Lesson
+                </button>
+                
+                <button
                     onClick={() => setSelectedSlot(null)}
                     className="w-full mt-2 text-gray-600 hover:text-gray-900"
                 >
@@ -408,11 +428,73 @@ export function InstructorCalendar() {
       {isSettingsOpen && editingDate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6 relative">
-             {/* Settings Form from original */}
-             <h2 className="text-lg font-bold text-gray-900 mb-2">Settings</h2>
+             <h2 className="text-lg font-bold text-gray-900 mb-4">Availability for {format(editingDate, "MMM d, yyyy")}</h2>
              <form onSubmit={handleSaveSettings} className="space-y-4">
-                  {/* ... same inputs ... */}
-                  <button type="submit">Save</button>
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox" 
+                      id="isWorking" 
+                      checked={settingsForm.isWorking}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, isWorking: e.target.checked })}
+                      className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
+                    />
+                    <label htmlFor="isWorking" className="text-sm font-medium text-gray-700">Working Day</label>
+                  </div>
+
+                  {settingsForm.isWorking && (
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
+                          <input 
+                            type="time" 
+                            value={settingsForm.startTime}
+                            onChange={(e) => setSettingsForm({ ...settingsForm, startTime: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
+                          <input 
+                            type="time" 
+                            value={settingsForm.endTime}
+                            onChange={(e) => setSettingsForm({ ...settingsForm, endTime: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Slot Duration (min)</label>
+                        <select 
+                          value={settingsForm.slotDurationMin}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, slotDurationMin: parseInt(e.target.value) })}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="45">45 min</option>
+                          <option value="60">60 min</option>
+                          <option value="90">90 min</option>
+                          <option value="120">120 min</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button 
+                      type="button" 
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="flex-1 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit"
+                      className="flex-1 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition"
+                    >
+                      Save Settings
+                    </button>
+                  </div>
              </form>
           </div>
         </div>

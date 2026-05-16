@@ -11,13 +11,15 @@ export function Login() {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // Allow localhost and *.run.app
-      if (!event.origin.includes('localhost') && !event.origin.endsWith('.run.app')) {
+      // Allow localhost, *.run.app (Google AI Studio) and *.onrender.com (Production)
+      if (!event.origin.includes('localhost') && 
+          !event.origin.endsWith('.run.app') && 
+          !event.origin.endsWith('.onrender.com')) {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        const { accessToken, role } = event.data.payload;
-        setAuth(accessToken, role);
+        const { accessToken, refreshToken, role } = event.data.payload;
+        setAuth(accessToken, refreshToken, role);
         navigate("/");
       }
     };
@@ -49,7 +51,7 @@ export function Login() {
       });
       const data = await res.json();
       if (res.ok) {
-        setAuth(data.accessToken, data.role);
+        setAuth(data.accessToken, data.refreshToken, data.role);
         navigate("/");
       } else {
         setError(data.error || "Login failed");

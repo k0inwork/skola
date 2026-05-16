@@ -9,13 +9,14 @@ export function StudentProfile() {
   const [lessons, setLessons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { token } = useAuthStore();
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const url = id ? `/api/students/${id}` : "/api/students/me";
     fetch(url, {
         headers: { Authorization: `Bearer ${token || ""}` }
     })
-    .then(res => res.json())
+    .then(res => res.ok ? res.json() : Promise.reject("Failed to fetch profile"))
     .then(data => {
         setProfile(data);
         setLoading(false);
@@ -29,15 +30,43 @@ export function StudentProfile() {
         fetch(`/api/students/${id}/lessons`, {
             headers: { Authorization: `Bearer ${token || ""}` }
         })
-        .then(res => res.json())
+        .then(res => res.ok ? res.json() : [])
         .then(data => setLessons(data))
         .catch(console.error);
     }
   }, [id, token]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
       e.preventDefault();
-      alert("Profile saving not implemented yet");
+      if (!profile || !profile.id) return;
+      setSaving(true);
+      try {
+        const res = await fetch(`/api/students/${profile.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            firstName: profile.firstName,
+            lastName: profile.lastName,
+            phone: profile.phone,
+            language: profile.language,
+            contactMethod: profile.contactMethod,
+            notes: profile.notes
+          }),
+        });
+        if (res.ok) {
+          alert("Profile updated successfully!");
+        } else {
+          alert("Failed to update profile");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error saving profile");
+      } finally {
+        setSaving(false);
+      }
   };
 
   if (loading) return <div className="p-8 text-center">Loading profile...</div>;
@@ -63,7 +92,13 @@ export function StudentProfile() {
                 <input value={profile?.email || ""} readOnly className="w-full border px-3 py-2 rounded-md bg-gray-50 text-gray-500" />
             </div>
         </div>
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md">Save Profile</button>
+        <button 
+          type="submit" 
+          disabled={saving}
+          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save Profile"}
+        </button>
       </form>
 
       {id && (

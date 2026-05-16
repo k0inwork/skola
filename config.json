@@ -1,0 +1,9 @@
+{
+  "DATABASE_URL": "postgres://postgres:postgres@localhost:5432/skola",
+  "JWT_SECRET": "your-super-secret-jwt-key",
+  "JWT_REFRESH_SECRET": "your-super-secret-refresh-key",
+  "GOOGLE_CLIENT_ID": "",
+  "GOOGLE_CLIENT_SECRET": "",
+  "PORT": 3000,
+  "HOST": "0.0.0.0"
+}

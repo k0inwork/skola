@@ -280,4 +280,39 @@ router.post("/update-lesson/:lessonId", async (req, res) => {
   }
 });
 
+router.post("/cancel-lesson/:lessonId", async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+    
+    const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
+    if (!lesson) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    // Permission check
+    if (req.userRole === "client") {
+      const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+      if (!student || lesson.studentId !== student.id) {
+        res.status(403).json({ error: "Forbidden: You can only cancel your own lessons" });
+        return;
+      }
+    }
+
+    await db.update(lessons)
+      .set({ status: "canceled" })
+      .where(eq(lessons.id, lessonId));
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Cancel lesson error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

@@ -8,13 +8,21 @@ import { validate, loginSchema } from "../lib/validation";
 import { students } from "../db/schema";
 import crypto from "crypto";
 
+import { config } from "../lib/config.js";
+
 const router = Router();
 
 router.get("/google/url", (req, res) => {
-  const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+  const googleClientId = config.GOOGLE_CLIENT_ID;
+  if (!googleClientId) {
+    console.error("Missing GOOGLE_CLIENT_ID environment variable.");
+    res.status(500).json({ error: "Google OAuth is not configured. Please add GOOGLE_CLIENT_ID to your secrets." });
+    return;
+  }
+  const baseUrl = config.HOST === '0.0.0.0' ? `${req.protocol}://${req.get("host")}` : `http://${config.HOST}:${config.PORT}`;
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
   const params = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID || "",
+    client_id: googleClientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "email profile",
@@ -24,7 +32,16 @@ router.get("/google/url", (req, res) => {
 
 router.get("/google/callback", async (req, res) => {
   const { code } = req.query;
-  const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+  const clientId = config.GOOGLE_CLIENT_ID;
+  const clientSecret = config.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    console.error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET");
+    res.status(500).send("OAuth configuration missing on server.");
+    return;
+  }
+
+  const baseUrl = config.HOST === '0.0.0.0' ? `${req.protocol}://${req.get("host")}` : `http://${config.HOST}:${config.PORT}`;
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
   
   if (!code) {
@@ -37,8 +54,8 @@ router.get("/google/callback", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID || "",
-        client_secret: process.env.GOOGLE_CLIENT_SECRET || "",
+        client_id: clientId,
+        client_secret: clientSecret,
         code: code as string,
         grant_type: "authorization_code",
         redirect_uri: redirectUri,
@@ -104,12 +121,21 @@ router.get("/google/callback", async (req, res) => {
       <html>
         <body>
           <script>
-            if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', payload: { accessToken: '${accessToken}', refreshToken: '${refreshToken}', role: '${user.role}' } }, '*');
-              window.close();
-            } else {
-              window.location.href = '/';
-            }
+            (function() {
+              const payload = ${JSON.stringify({ accessToken, refreshToken, role: user.role })};
+              if (window.opener) {
+                // Allow both ai.studio and Render origins
+                const allowedOrigins = [
+                  "https://accounts.google.com", 
+                  "https://ais-dev-ligkvq4zk6tql2qp7vyfk7-588853010945.us-east1.run.app",
+                  "https://ais-pre-ligkvq4zk6tql2qp7vyfk7-588853010945.us-east1.run.app"
+                ];
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', payload: payload }, '*'); 
+                window.close();
+              } else {
+                window.location.href = '/';
+              }
+            })();
           </script>
           <p>Logged in! You can close this window now.</p>
         </body>

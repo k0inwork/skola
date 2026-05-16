@@ -7,11 +7,14 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { db } from "./src/db/index.js";
 import { users } from "./src/db/schema.js";
+import { requireAuth } from "./src/middleware/auth.js";
 import authRoutes from "./src/routes/auth.js";
 import studentRoutes from "./src/routes/students.js";
 import paymentRoutes from "./src/routes/payments.js";
 import dashboardRoutes from "./src/routes/dashboard.js";
 import calendarRoutes from "./src/routes/calendar.js";
+
+import { config } from "./src/lib/config.js";
 
 async function startServer() {
   const app = express();
@@ -23,7 +26,8 @@ async function startServer() {
     }
   });
 
-  const PORT = 3000;
+  const PORT = config.PORT;
+  const HOST = config.HOST;
 
   app.set("io", io);
 
@@ -40,9 +44,15 @@ async function startServer() {
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/calendar", calendarRoutes);
 
-  app.get("/api/users", async (req, res) => {
+  app.get("/api/users", requireAuth, async (req, res) => {
     try {
-      const allUsers = await db.select().from(users);
+      // Use standard SQLite select but filter fields manually or via query
+      const allUsers = await db.select({
+        id: users.id,
+        email: users.email,
+        role: users.role,
+        createdAt: users.createdAt
+      }).from(users);
       res.json(allUsers);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -70,8 +80,8 @@ async function startServer() {
     });
   });
 
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
   });
 }
 

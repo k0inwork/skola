@@ -133,6 +133,26 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+router.patch("/:id", validate(updateStudentSchema), async (req, res) => {
+  try {
+    const studentData = req.body;
+    const [updated] = await db
+      .update(students)
+      .set({ ...studentData, updatedAt: new Date() })
+      .where(eq(students.id, req.params.id))
+      .returning();
+    
+    if (!updated) {
+      res.status(404).json({ error: "Student not found" });
+      return;
+    }
+    res.json(updated);
+  } catch (err) {
+    console.error("Update student error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/:id/lessons", async (req, res) => {
   try {
     const studentLessons = await db.select()

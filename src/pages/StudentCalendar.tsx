@@ -32,6 +32,7 @@ interface Slot {
   endTime: string;
   date: string;
   isAvailable: boolean;
+  isMine: boolean;
   lesson?: BookedLesson;
 }
 
@@ -48,14 +49,18 @@ export function StudentCalendar() {
   const [bookingSlot, setBookingSlot] = useState<Slot | null>(null);
 
   useEffect(() => {
-    fetch("/api/users")
-      .then(r => r.json())
+    if (!token) return;
+    fetch("/api/users", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
+        if (!data || !Array.isArray(data)) return;
         const insts = data.filter((u: any) => u.role === "instructor" || u.role === "admin");
         if (insts.length > 0) setSelectedInstructor(insts[0].id);
       })
       .catch(console.error);
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (selectedInstructor) {
@@ -125,6 +130,7 @@ export function StudentCalendar() {
             time: timeStr,
             endTime: endTimeStr,
             isAvailable: isAvailable,
+            isMine: !!(lesson as any)?.isMine,
             lesson
         });
         
@@ -137,13 +143,30 @@ export function StudentCalendar() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   const handleSlotClick = (slot: Slot) => {
-    if (!slot.isAvailable) return;
+    if (!slot.isAvailable && !slot.isMine) return;
     setBookingSlot(slot);
     setIsBookingOpen(true);
   };
 
   const handleBookSlot = async () => {
     if (!bookingSlot) return;
+
+    if (bookingSlot.isMine && bookingSlot.lesson) {
+      if (confirm("Are you sure you want to cancel your lesson?")) {
+        const res = await fetch(`/api/calendar/cancel-lesson/${bookingSlot.lesson.id}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          setIsBookingOpen(false);
+          fetchCalendarData();
+        } else {
+          alert("Failed to cancel lesson");
+        }
+      }
+      return;
+    }
+
     console.log("Booking slot:", bookingSlot);
     try {
       const res = await fetch("/api/calendar/book", {
@@ -202,16 +225,18 @@ export function StudentCalendar() {
                  {slotList.map((slot, idx) => (
                     <button 
                       key={idx}
-                      disabled={!slot.isAvailable}
+                      disabled={!slot.isAvailable && !slot.isMine}
                       onClick={() => handleSlotClick(slot)}
                       className={clsx(
-                        "p-2 text-xs rounded-lg text-left",
-                        slot.isAvailable ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800" : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        "p-2 text-xs rounded-lg text-left transition-all",
+                        slot.isAvailable ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800" : 
+                        slot.isMine ? "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300" :
+                        "bg-gray-100 text-gray-400 cursor-not-allowed"
                       )}
                     >
                       <div className="font-bold">{slot.time}</div>
                       <div className="flex justify-between items-center overflow-hidden">
-                        <span>{slot.isAvailable ? "Book" : "Taken"}</span>
+                        <span>{slot.isAvailable ? "Book" : slot.isMine ? "My Lesson" : "Taken"}</span>
                         {!slot.isAvailable && slot.lesson?.location && (
                           <span className="text-[10px] bg-white/50 px-1 rounded truncate max-w-[50%] ml-1">📍 {slot.lesson.location}</span>
                         )}
@@ -227,10 +252,23 @@ export function StudentCalendar() {
       {isBookingOpen && bookingSlot && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6 relative">
-             Confirm booking?
+             <h3 className="text-lg font-bold mb-2">
+               {bookingSlot.isMine ? "Cancel Lesson?" : "Confirm booking?"}
+             </h3>
+             <p className="text-sm text-gray-500 mb-4">
+               {bookingSlot.date} at {bookingSlot.time}
+             </p>
              <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setIsBookingOpen(false)}>Cancel</button>
-                <button onClick={handleBookSlot} className="bg-blue-600 text-white px-3 py-1 rounded">Confirm</button>
+                <button onClick={() => setIsBookingOpen(false)} className="px-4 py-2 text-gray-600">No, go back</button>
+                <button 
+                  onClick={handleBookSlot} 
+                  className={clsx(
+                    "px-4 py-2 rounded font-medium text-white",
+                    bookingSlot.isMine ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
+                  )}
+                >
+                  {bookingSlot.isMine ? "Yes, Cancel" : "Yes, Confirm"}
+                </button>
              </div>
           </div>
         </div>

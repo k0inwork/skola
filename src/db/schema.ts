@@ -1,21 +1,21 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, timestamp, boolean, integer, uuid } from "drizzle-orm/pg-core";
 
-export const users = sqliteTable("users", {
-  id: text("id")
+export const users = pgTable("users", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+    .defaultRandom(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
-  role: text("role", { enum: ["admin", "instructor", "client"] }).notNull().default("client"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  role: text("role").notNull().default("client"), // Enum check moved to validation logic for simplicity or use custom pgEnum
+  createdAt: timestamp("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const students = sqliteTable("students", {
-  id: text("id")
+export const students = pgTable("students", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+    .defaultRandom(),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   phone: text("phone"),
@@ -23,46 +23,46 @@ export const students = sqliteTable("students", {
   language: text("language").default("lv"),
   contactMethod: text("contact_method"),
   source: text("source"),
-  status: text("status", { enum: ["lead", "registered", "active", "paused", "completed", "archived"] }).default("lead"),
+  status: text("status").default("lead"),
   notes: text("notes"),
-  userId: text("user_id").references(() => users.id),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  userId: uuid("user_id").references(() => users.id),
+  createdAt: timestamp("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }),
-  deletedAt: integer("deleted_at", { mode: "timestamp" }),
+    .defaultNow(),
+  updatedAt: timestamp("updated_at"),
+  deletedAt: timestamp("deleted_at"),
 });
 
-export const enrollments = sqliteTable("enrollments", {
-  id: text("id")
+export const enrollments = pgTable("enrollments", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  studentId: text("student_id")
+    .defaultRandom(),
+  studentId: uuid("student_id")
     .notNull()
     .references(() => students.id),
   courseTypeId: text("course_type_id").notNull(),
   startDate: text("start_date").notNull(),
   endDate: text("end_date"),
   expiryDate: text("expiry_date"),
-  status: text("status", { enum: ["draft", "active", "paused", "finished", "expired", "archived"] }).default("draft"),
+  status: text("status").default("draft"),
   packagePrice: text("package_price").default("0"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }),
+    .defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
-export const lessons = sqliteTable("lessons", {
-  id: text("id")
+export const lessons = pgTable("lessons", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  enrollmentId: text("enrollment_id")
+    .defaultRandom(),
+  enrollmentId: uuid("enrollment_id")
     .notNull()
     .references(() => enrollments.id),
-  studentId: text("student_id")
+  studentId: uuid("student_id")
     .notNull()
     .references(() => students.id),
-  instructorId: text("instructor_id")
+  instructorId: uuid("instructor_id")
     .references(() => users.id),
   date: text("date").notNull(),
   startTime: text("start_time").notNull(),
@@ -71,37 +71,37 @@ export const lessons = sqliteTable("lessons", {
   location: text("location"),
   vehicle: text("vehicle"),
   notes: text("notes"),
-  status: text("status", { enum: ["scheduled", "completed", "canceled", "missed", "rescheduled"] }).default("scheduled"),
-  paid: integer("paid", { mode: "boolean" }).default(false),
+  status: text("status").default("scheduled"),
+  paid: boolean("paid").default(false),
   outcome: text("outcome"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" }),
+    .defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
-export const instructorWorkingDays = sqliteTable("instructor_working_days", {
-  id: text("id")
+export const instructorWorkingDays = pgTable("instructor_working_days", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  instructorId: text("instructor_id")
+    .defaultRandom(),
+  instructorId: uuid("instructor_id")
     .notNull()
     .references(() => users.id),
   date: text("date").notNull(),
-  isWorking: integer("is_working", { mode: "boolean" }).notNull().default(true),
+  isWorking: boolean("is_working").notNull().default(true),
   startTime: text("start_time").default("09:00"),
   endTime: text("end_time").default("17:00"),
   slotDurationMin: integer("slot_duration_min").default(60),
 });
 
-export const payments = sqliteTable("payments", {
-  id: text("id")
+export const payments = pgTable("payments", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  studentId: text("student_id")
+    .defaultRandom(),
+  studentId: uuid("student_id")
     .notNull()
     .references(() => students.id),
-  enrollmentId: text("enrollment_id")
+  enrollmentId: uuid("enrollment_id")
     .notNull()
     .references(() => enrollments.id),
   amount: text("amount").notNull(),
@@ -109,36 +109,36 @@ export const payments = sqliteTable("payments", {
   method: text("method"),
   reference: text("reference"),
   comment: text("comment"),
-  status: text("status", { enum: ["pending", "paid", "partial", "overdue", "refunded"] }).default("pending"),
+  status: text("status").default("pending"),
 });
 
-export const progress = sqliteTable("progress", {
-  id: text("id")
+export const progress = pgTable("progress", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  studentId: text("student_id")
+    .defaultRandom(),
+  studentId: uuid("student_id")
     .notNull()
     .references(() => students.id),
-  enrollmentId: text("enrollment_id")
+  enrollmentId: uuid("enrollment_id")
     .notNull()
     .references(() => enrollments.id),
-  type: text("type", { enum: ["theory", "practice"] }).notNull(),
+  type: text("type").notNull(),
   milestone: text("milestone").notNull(),
   result: text("result"),
   achievedAt: text("achieved_at"),
   comment: text("comment"),
 });
 
-export const notes = sqliteTable("notes", {
-  id: text("id")
+export const notes = pgTable("notes", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  studentId: text("student_id")
+    .defaultRandom(),
+  studentId: uuid("student_id")
     .notNull()
     .references(() => students.id),
   content: text("content").notNull(),
-  type: text("type", { enum: ["general", "call", "email", "meeting"] }).default("general"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  type: text("type").default("general"),
+  createdAt: timestamp("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });

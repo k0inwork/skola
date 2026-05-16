@@ -18,6 +18,7 @@ export function Students() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [newStudent, setNewStudent] = useState({ firstName: "", lastName: "", email: "", phone: "" });
   const [createAccount, setCreateAccount] = useState(false);
   const [password, setPassword] = useState("");
@@ -203,6 +204,8 @@ export function Students() {
             <input 
               type="text" 
               placeholder="Search students..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
           </div>
@@ -221,14 +224,24 @@ export function Students() {
               </tr>
             </thead>
             <tbody>
-              {students.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="p-8 text-center text-gray-500">
-                    No students found.
-                  </td>
-                </tr>
-              ) : (
-                students.map((student) => (
+              {(() => {
+                const filtered = students.filter(s => 
+                  `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  s.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  s.phone?.includes(searchQuery)
+                );
+                
+                if (filtered.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-gray-500">
+                        {searchQuery ? "No results matching your search." : "No students found."}
+                      </td>
+                    </tr>
+                  );
+                }
+                
+                return filtered.map((student) => (
                   <tr key={student.id} className="border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer" onClick={() => navigate(`/students/${student.id}`)}>
                     <td className="p-4">
                       <div className="flex items-center gap-3">
@@ -253,8 +266,8 @@ export function Students() {
                       {new Date(student.createdAt).toLocaleDateString()}
                     </td>
                   </tr>
-                ))
-              )}
+                ));
+              })()}
             </tbody>
           </table>
         )}

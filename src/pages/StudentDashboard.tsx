@@ -14,7 +14,7 @@ export function StudentDashboard() {
     fetch("/api/dashboard/stats", {
       headers: { Authorization: `Bearer ${token}` }
     })
-    .then(res => res.json())
+    .then(res => res.ok ? res.json() : Promise.reject("Failed to fetch"))
     .then(data => {
       setStats(data);
       setLoading(false);
