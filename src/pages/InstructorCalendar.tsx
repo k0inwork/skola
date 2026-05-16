@@ -1,18 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { format, addDays, startOfWeek, isSameDay, parseISO, isAfter, isBefore, addMinutes, startOfDay } from "date-fns";
 import { useAuthStore } from "../lib/store";
-import { ChevronLeft, ChevronRight, User as UserIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
-
-// Interfaces and logic from original Calendar.tsx for Instructor
-// (I will need to ensure this is a complete functional component)
-// ... (I'll implement the full component content based on original)
-
-import { useState, useEffect } from "react";
-import { format, addDays, startOfWeek, isSameDay, parseISO, isAfter, isBefore, addMinutes, startOfDay } from "date-fns";
-import { useAuthStore } from "../lib/store";
-import { ChevronLeft, ChevronRight, User as UserIcon } from "lucide-react";
-import clsx from "clsx";
+import { io } from "socket.io-client";
 
 interface WorkingDay {
   id: string;
@@ -35,6 +26,8 @@ interface BookedLesson {
   studentPhone?: string | null;
   isMine?: boolean;
   paid?: boolean | null;
+  notes?: string | null;
+  location?: string | null;
 }
 
 interface Slot {
@@ -53,6 +46,7 @@ export function InstructorCalendar() {
   const [workingDays, setWorkingDays] = useState<WorkingDay[]>([]);
   const [bookedLessons, setBookedLessons] = useState<BookedLesson[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
 
   // Settings Modal State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -79,6 +73,20 @@ export function InstructorCalendar() {
       fetchCalendarData();
     }
   }, [selectedInstructor, currentDate]);
+
+  useEffect(() => {
+    const socket = io();
+    socket.on("calendar_update", (data) => {
+      // Refresh if the update is relevant to the currently viewed instructor
+      if (!data.instructorId || data.instructorId === selectedInstructor || data.instructorId === "all") {
+        fetchCalendarData();
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [selectedInstructor, currentDate]); // Dependencies ensure we refresh correctly if date or instructor changes
 
   const fetchCalendarData = async () => {
     setLoading(true);
@@ -173,7 +181,7 @@ export function InstructorCalendar() {
       setIsSettingsOpen(true);
   };
 
-  const handleSaveSettings = async (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingDate || !selectedInstructor) return;
     try {
@@ -211,6 +219,24 @@ export function InstructorCalendar() {
     } catch (err) {
       console.error(err);
       alert("Error marking as paid");
+    }
+  };
+
+  const handleUpdateLesson = async (lessonId: string, notes: string, location: string) => {
+    try {
+      const res = await fetch(`/api/calendar/update-lesson/${lessonId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ notes, location })
+      });
+      if (res.ok) {
+        fetchCalendarData();
+      } else {
+        alert("Failed to update lesson");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error updating lesson");
     }
   };
 
@@ -282,11 +308,12 @@ export function InstructorCalendar() {
                   {slotList.map((slot, idx) => (
                       <div 
                       key={idx}
+                      onClick={() => !slot.isAvailable && slot.lesson && setSelectedSlot(slot)}
                       className={clsx(
                         "p-2.5 text-xs rounded-lg transition-all duration-200 relative group overflow-hidden border",
                         slot.isAvailable 
-                          ? "bg-white shadow-sm border-gray-200" 
-                          : "bg-gray-50 border-gray-100 shadow-sm opacity-90"
+                          ? "bg-white shadow-sm border-gray-200 cursor-default" 
+                          : "bg-gray-50 border-gray-100 shadow-sm opacity-90 cursor-pointer hover:bg-gray-100"
                       )}
                     >
                       <div className="flex items-center gap-2 mb-1">
@@ -300,24 +327,12 @@ export function InstructorCalendar() {
                       </div>
                       
                       {!slot.isAvailable && slot.lesson && (
-                        <div className="mt-2 flex flex-col gap-1 text-gray-700 ml-4 bg-white rounded p-2 border border-gray-200 shadow-sm">
+                        <div className="mt-2 flex flex-col gap-1 text-gray-700 ml-4 bg-white rounded p-2 border border-blue-100 shadow-sm">
                           <div className="flex items-center gap-1.5 font-medium text-gray-900">
-                            <UserIcon className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                            <UserIcon className="w-3.5 h-3.5 shrink-0 text-blue-400" />
                             <span className="truncate">{slot.lesson.studentFirstName} {slot.lesson.studentLastName}</span>
                           </div>
-                      
-                          {slot.lesson.paid ? (
-                              <div className="text-xs text-emerald-600 font-medium">Lesson was paid</div>
-                          ) : (
-                            isAfter(new Date(), parseISO(`${slot.lesson.date}T${slot.lesson.endTime}`)) && (
-                                <button
-                                  onClick={() => handleMarkPaid(slot.lesson!.id, slot.lesson!.studentId)}
-                                  className="mt-1 text-xs bg-emerald-600 text-white px-2 py-1 rounded hover:bg-emerald-700 transition"
-                                >
-                                  Lesson was paid
-                                </button>
-                            )
-                          )}
+                          {slot.lesson.paid && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
                         </div>
                       )}
                     </div>
@@ -329,6 +344,67 @@ export function InstructorCalendar() {
         </div>
       </div>
       
+      {selectedSlot && selectedSlot.lesson && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Lesson Details</h3>
+                <div className="space-y-3 mb-6">
+                    <p><strong>Student:</strong> {selectedSlot.lesson.studentFirstName} {selectedSlot.lesson.studentLastName}</p>
+                    <p><strong>Time:</strong> {selectedSlot.time} - {selectedSlot.endTime}</p>
+                    <p><strong>Status:</strong> {selectedSlot.lesson.paid ? "Paid" : "Unpaid"}</p>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Place (Driving Lesson Location)</label>
+                      <input 
+                          type="text"
+                          value={selectedSlot.lesson.location || ""}
+                          onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value }})}
+                          placeholder="Meeting point..."
+                          className="w-full p-2 border rounded text-sm mb-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Instructor Comments</label>
+                      <textarea 
+                          value={selectedSlot.lesson.notes || ""}
+                          onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, notes: e.target.value }})}
+                          placeholder="How did the student do?"
+                          className="w-full p-2 border rounded text-sm"
+                          rows={3}
+                      />
+                    </div>
+                    <button 
+                        onClick={() => {
+                            handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "");
+                            setSelectedSlot(null);
+                        }}
+                        className="w-full text-xs bg-slate-800 text-white px-2 py-2 rounded hover:bg-slate-900 transition-colors"
+                    >
+                        Save Lesson Details
+                    </button>
+                </div>
+                
+                {!selectedSlot.lesson.paid && (
+                  <button
+                    onClick={() => {
+                        handleMarkPaid(selectedSlot.lesson!.id, selectedSlot.lesson!.studentId);
+                        setSelectedSlot(null);
+                    }}
+                    className="w-full bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 transition"
+                  >
+                    Mark as Paid
+                  </button>
+                )}
+                
+                <button
+                    onClick={() => setSelectedSlot(null)}
+                    className="w-full mt-2 text-gray-600 hover:text-gray-900"
+                >
+                    Close
+                </button>
+              </div>
+          </div>
+      )}
+
       {isSettingsOpen && editingDate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6 relative">

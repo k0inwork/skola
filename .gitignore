@@ -4,7 +4,7 @@ dist/
 coverage/
 .DS_Store
 *.log
-scola.db
-scola.db-journal
+skola.db
+skola.db-journal
 .env*
 !.env.example

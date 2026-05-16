@@ -3,6 +3,8 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
+import { createServer } from "http";
+import { Server } from "socket.io";
 import { db } from "./src/db/index.js";
 import { users } from "./src/db/schema.js";
 import authRoutes from "./src/routes/auth.js";
@@ -13,7 +15,17 @@ import calendarRoutes from "./src/routes/calendar.js";
 
 async function startServer() {
   const app = express();
+  const httpServer = createServer(app);
+  const io = new Server(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
   const PORT = 3000;
+
+  app.set("io", io);
 
   app.use(cors());
   app.use(express.json());
@@ -51,7 +63,14 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  io.on("connection", (socket) => {
+    console.log("Client connected:", socket.id);
+    socket.on("disconnect", () => {
+      console.log("Client disconnected:", socket.id);
+    });
+  });
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { sql, eq } from "drizzle-orm";
+import { sql, eq, and, or } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { students, lessons, payments } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -16,16 +16,31 @@ router.get("/stats", async (req, res) => {
     if (isStudent && student.length > 0) {
         // Student view: Fetch only their data
         const studentId = student[0].id;
+        const now = new Date().toISOString();
+        const currentDate = now.split('T')[0];
+        const currentTime = now.split('T')[1].substring(0, 5);
         
         const scheduledLessonsResult = await db.select({ count: sql<number>`count(*)` })
           .from(lessons)
-          .where(eq(lessons.studentId, studentId));
+          .where(
+            and(
+              eq(lessons.studentId, studentId),
+              eq(lessons.status, "scheduled"),
+              or(
+                sql`${lessons.date} > ${currentDate}`,
+                and(
+                  eq(lessons.date, currentDate),
+                  sql`${lessons.startTime} > ${currentTime}`
+                )
+              )
+            )
+          );
         const scheduledLessons = Number(scheduledLessonsResult[0].count);
         
         res.json({
-            activeStudents: 0, // Not applicable
+            activeStudents: 0,
             scheduledLessons,
-            pendingPayments: 0 // Not applicable or fetched differently
+            pendingPayments: 0
         });
     } else {
         // Instructor/Admin view: Fetch all
@@ -34,20 +49,30 @@ router.get("/stats", async (req, res) => {
           .where(eq(students.status, "active"));
         const activeStudents = Number(activeStudentsResult[0].count);
 
+        const now = new Date().toISOString();
+        const currentDate = now.split('T')[0];
+        const currentTime = now.split('T')[1].substring(0, 5);
+
         const scheduledLessonsResult = await db.select({ count: sql<number>`count(*)` })
           .from(lessons)
-          .where(eq(lessons.status, "scheduled"));
+          .where(
+            and(
+              eq(lessons.status, "scheduled"),
+              or(
+                sql`${lessons.date} > ${currentDate}`,
+                and(
+                  eq(lessons.date, currentDate),
+                  sql`${lessons.startTime} > ${currentTime}`
+                )
+              )
+            )
+          );
         const scheduledLessons = Number(scheduledLessonsResult[0].count);
-
-        const pendingPaymentsResult = await db.select({ count: sql<number>`count(*)` })
-          .from(payments)
-          .where(eq(payments.status, "pending"));
-        const pendingPayments = Number(pendingPaymentsResult[0].count);
 
         res.json({
           activeStudents,
           scheduledLessons,
-          pendingPayments
+          pendingPayments: 0
         });
     }
   } catch (err) {

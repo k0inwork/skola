@@ -37,7 +37,7 @@ export function InstructorDashboard() {
       {loading ? (
         <div className="p-8 text-center text-gray-500">Loading metrics...</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
             <h3 className="text-gray-500 font-medium text-sm">Active Students</h3>
             <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.activeStudents}</p>
@@ -45,10 +45,6 @@ export function InstructorDashboard() {
           <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
             <h3 className="text-gray-500 font-medium text-sm">Scheduled Lessons</h3>
             <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.scheduledLessons}</p>
-          </div>
-          <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-            <h3 className="text-gray-500 font-medium text-sm">Pending Payments</h3>
-            <p className="mt-2 text-3xl font-semibold text-gray-900">{stats.pendingPayments}</p>
           </div>
         </div>
       )}

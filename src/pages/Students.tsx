@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
 import { Plus, Search, User as UserIcon, X } from "lucide-react";
 
@@ -14,6 +15,7 @@ interface Student {
 
 export function Students() {
   const [students, setStudents] = useState<Student[]>([]);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newStudent, setNewStudent] = useState({ firstName: "", lastName: "", email: "", phone: "" });
@@ -45,7 +47,7 @@ export function Students() {
     }
   };
 
-  const handleAddStudent = async (e: React.FormEvent) => {
+  const handleAddStudent = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
@@ -227,7 +229,7 @@ export function Students() {
                 </tr>
               ) : (
                 students.map((student) => (
-                  <tr key={student.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <tr key={student.id} className="border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer" onClick={() => navigate(`/students/${student.id}`)}>
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">

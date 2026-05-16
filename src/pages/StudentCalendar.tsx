@@ -3,6 +3,7 @@ import { format, addDays, startOfWeek, isSameDay, parseISO, isAfter, isBefore, a
 import { useAuthStore } from "../lib/store";
 import { ChevronLeft, ChevronRight, User as UserIcon } from "lucide-react";
 import clsx from "clsx";
+import { io } from "socket.io-client";
 
 interface WorkingDay {
   id: string;
@@ -23,6 +24,7 @@ interface BookedLesson {
   studentLastName: string;
   studentEmail?: string | null;
   studentPhone?: string | null;
+  location?: string | null;
 }
 
 interface Slot {
@@ -59,6 +61,16 @@ export function StudentCalendar() {
     if (selectedInstructor) {
       fetchCalendarData();
     }
+  }, [selectedInstructor, currentDate]);
+
+  useEffect(() => {
+    const socket = io();
+    socket.on("calendar_update", (data) => {
+      if (!data.instructorId || data.instructorId === selectedInstructor || data.instructorId === "all") {
+        fetchCalendarData();
+      }
+    });
+    return () => { socket.disconnect(); };
   }, [selectedInstructor, currentDate]);
 
   const fetchCalendarData = async () => {
@@ -197,7 +209,13 @@ export function StudentCalendar() {
                         slot.isAvailable ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800" : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       )}
                     >
-                      {slot.time} {slot.isAvailable ? "Book" : "Taken"}
+                      <div className="font-bold">{slot.time}</div>
+                      <div className="flex justify-between items-center overflow-hidden">
+                        <span>{slot.isAvailable ? "Book" : "Taken"}</span>
+                        {!slot.isAvailable && slot.lesson?.location && (
+                          <span className="text-[10px] bg-white/50 px-1 rounded truncate max-w-[50%] ml-1">📍 {slot.lesson.location}</span>
+                        )}
+                      </div>
                     </button>
                  ))}
               </div>

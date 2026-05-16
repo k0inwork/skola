@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
 
@@ -39,7 +39,7 @@ export function Login() {
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     try {
       const res = await fetch("/api/auth/login", {
@@ -62,7 +62,7 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-sm border border-gray-100">
-        <h1 className="text-3xl font-bold text-center text-slate-900 mb-8">Scola</h1>
+        <h1 className="text-3xl font-bold text-center text-slate-900 mb-8">Skola</h1>
         
         <form onSubmit={handleLogin} className="space-y-4">
           {error && <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">{error}</div>}

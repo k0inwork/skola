@@ -1,14 +1,14 @@
 import { Router } from "express";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull, sql, ne, or, desc } from "drizzle-orm";
 import { db } from "../db/index";
-import { students, users, notes } from "../db/schema";
-import { requireAdmin, requireAuth } from "../middleware/auth";
+import { students, users, notes, lessons } from "../db/schema";
+import { requireAuth } from "../middleware/auth";
 import { validate, createStudentSchema, updateStudentSchema } from "../lib/validation";
 import { hash } from "bcryptjs";
 
 const router = Router();
 
-router.use(requireAuth); // In Scola, is it requireAdmin? Let's use requireAuth for now.
+router.use(requireAuth); 
 
 router.get("/", async (req, res) => {
   try {
@@ -28,22 +28,29 @@ router.get("/", async (req, res) => {
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // Using basic select since sqlite dialect.
-    const rows = await db.select()
+    const result = await db.select({ student: students })
         .from(students)
+        .leftJoin(users, eq(students.userId, users.id))
+        .where(
+            and(
+                ...conditions,
+                or(isNull(users.role), ne(users.role, 'admin'))
+            )
+        )
         .limit(parseInt(limit))
         .offset(offset);
-        // Note: we'd ideally apply where(and(...conditions)) but bypassing for the quick fix if needed
-        // Let's do it properly
-
-    const query = db.select().from(students).where(and(...conditions)).limit(parseInt(limit)).offset(offset);
     
-    // SQLite requires sqliteTable schema usage directly
-    const resultRows = await query;
+    const resultRows = result.map(r => r.student);
     
     const countResult = await db.select({ count: sql<number>`count(*)` })
         .from(students)
-        .where(and(...conditions));
+        .leftJoin(users, eq(students.userId, users.id))
+        .where(
+            and(
+                ...conditions,
+                or(isNull(users.role), ne(users.role, 'admin'))
+            )
+        );
 
     res.json({
       data: resultRows,
@@ -108,6 +115,33 @@ router.post("/", validate(createStudentSchema), async (req, res) => {
     res.status(201).json(student);
   } catch (err) {
     console.error("Create student error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/:id", async (req, res) => {
+  try {
+    const student = await db.select().from(students).where(eq(students.id, req.params.id)).limit(1);
+    if (student.length === 0) {
+      res.status(404).json({ error: "Student not found" });
+      return;
+    }
+    res.json(student[0]);
+  } catch (err) {
+    console.error("Get student error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/:id/lessons", async (req, res) => {
+  try {
+    const studentLessons = await db.select()
+        .from(lessons)
+        .where(eq(lessons.studentId, req.params.id))
+        .orderBy(desc(lessons.date), desc(lessons.startTime));
+    res.json(studentLessons);
+  } catch (err) {
+    console.error("List lessons error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

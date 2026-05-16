@@ -20,9 +20,9 @@ export default function App() {
           <Route index element={<Navigate to="/calendar" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="students" element={<Students />} />
+          <Route path="students/:id" element={<StudentProfile />} />
           <Route path="calendar" element={<CalendarView />} />
           <Route path="profile" element={<StudentProfile />} />
-          <Route path="payments" element={<Payments />} />
         </Route>
       </Routes>
     </BrowserRouter>

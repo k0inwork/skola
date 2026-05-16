@@ -18,7 +18,7 @@ export function Layout() {
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col">
         <div className="p-6">
-          <h1 className="text-2xl font-bold tracking-tight">Scola</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Skola</h1>
         </div>
         
         <nav className="flex-1 px-4 space-y-2">
@@ -43,16 +43,6 @@ export function Layout() {
               >
                 <Users className={clsx("w-5 h-5", location.pathname === "/students" ? "text-white" : "text-slate-500")} />
                 Students
-              </Link>
-              <Link 
-                to="/payments" 
-                className={clsx(
-                  "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
-                  location.pathname === "/payments" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
-                )}
-              >
-                <CreditCard className={clsx("w-5 h-5", location.pathname === "/payments" ? "text-white" : "text-slate-500")} />
-                Payments
               </Link>
             </>
           )}

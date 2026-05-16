@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { instructorWorkingDays, lessons, users, students } from "../db/schema.js";
+import { instructorWorkingDays, lessons, users, students, enrollments } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
@@ -58,6 +58,11 @@ router.post("/working-days", async (req, res) => {
       });
     }
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId, date });
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("Upsert working days error:", err);
@@ -95,6 +100,8 @@ router.get("/slots", async (req, res) => {
       studentEmail: students.email,
       studentPhone: students.phone,
       paid: lessons.paid,
+      notes: lessons.notes,
+      location: lessons.location,
     })
     .from(lessons)
     .leftJoin(students, eq(lessons.studentId, students.id))
@@ -163,13 +170,18 @@ router.post("/book", async (req, res) => {
       if (existingEnrollment) {
         enrollmentId = existingEnrollment.id;
       } else {
-        const [newEnrollment] = await db.insert(enrollments).values({
-            studentId,
-            courseTypeId: "default-course-type",
-            startDate: date, // start today
-            status: "active"
-        }).returning();
-        enrollmentId = newEnrollment.id;
+        try {
+            const [newEnrollment] = await db.insert(enrollments).values({
+                studentId,
+                courseTypeId: "default-course-type",
+                startDate: date, // start today
+                status: "active"
+            }).returning();
+            enrollmentId = newEnrollment.id;
+        } catch (e) {
+            console.error("Failed to create enrollment:", e);
+            throw e;
+        }
       }
     }
 
@@ -179,7 +191,8 @@ router.post("/book", async (req, res) => {
       eq(lessons.date, date),
       inArray(lessons.status, ["scheduled", "rescheduled"])
     ));
-
+    
+    // Check overlap
     const overlap = existing.some(l => (
       l.startTime < endTime && l.endTime > startTime
     ));
@@ -200,10 +213,15 @@ router.post("/book", async (req, res) => {
       status: "scheduled"
     }).returning();
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId, date });
+    }
+
     res.json(lesson);
   } catch (err) {
     console.error("Book lesson error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Internal server error: " + (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -224,9 +242,40 @@ router.post("/mark-lesson-paid", async (req, res) => {
       .set({ status: "active" })
       .where(eq(students.id, studentId));
 
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId: "all", lessonId }); // Simplified for broad update
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("Mark lesson paid error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/update-lesson/:lessonId", async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+    const { notes, location } = req.body;
+    
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    await db.update(lessons)
+      .set({ notes, location })
+      .where(eq(lessons.id, lessonId));
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { lessonId });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Update lesson error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
