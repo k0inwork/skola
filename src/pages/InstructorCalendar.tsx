@@ -221,8 +221,14 @@ export function InstructorCalendar() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ instructorId: selectedInstructor, date: format(editingDate, "yyyy-MM-dd"), ...settingsForm })
       });
-      if (res.ok) { setIsSettingsOpen(false); fetchCalendarData(); }
-    } catch (err) { console.error(err); }
+      if (res.ok) {
+        setIsSettingsOpen(false);
+        await fetchCalendarData();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to save settings");
+      }
+    } catch (err) { console.error(err); alert("Error saving settings"); }
   };
 
   const handleMarkPaid = async (lessonId: string, studentId: string | null) => {
