@@ -305,31 +305,41 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
       .set({ status: "canceled" })
       .where(eq(lessons.id, lessonId));
 
-    // Send cancellation message to the student
-    if (lesson.studentId) {
-      const [student] = await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1);
-      if (student?.userId) {
-        const { messages: msgs } = await import("../db/schema.js");
-        const content = reason
-          ? `Lesson on ${lesson.date} (${lesson.startTime}-${lesson.endTime}) has been cancelled. Reason: ${reason}`
-          : `Lesson on ${lesson.date} (${lesson.startTime}-${lesson.endTime}) has been cancelled.`;
-        const [msg] = await db.insert(msgs).values({
-          senderId: req.userId,
-          recipientId: student.userId,
-          content,
-          type: "lesson_cancelled",
-          lessonId: lessonId,
-        }).returning();
+    // Determine who cancelled and who to notify
+    const { messages: msgs } = await import("../db/schema.js");
+    const [student] = lesson.studentId
+      ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
+      : [null];
 
-        const io = req.app.get("io");
-        if (io && msg) {
-          io.emit("new_message", { message: msg, recipientId: student.userId });
-        }
-      }
+    let senderId = req.userId!;
+    let recipientId: string;
+    let cancelledBy: string;
+
+    if (req.userRole === "client") {
+      // Student cancelled → message goes to instructor
+      recipientId = lesson.instructorId;
+      cancelledBy = student ? `${student.firstName} ${student.lastName}` : "Student";
+    } else {
+      // Instructor/admin cancelled → message goes to student
+      recipientId = student?.userId!;
+      cancelledBy = "Instructor";
     }
 
+    const content = reason
+      ? `Lesson on ${lesson.date} (${lesson.startTime}-${lesson.endTime}) cancelled by ${cancelledBy}. Reason: ${reason}`
+      : `Lesson on ${lesson.date} (${lesson.startTime}-${lesson.endTime}) cancelled by ${cancelledBy}.`;
+
+    const [msg] = await db.insert(msgs).values({
+      senderId,
+      recipientId,
+      content,
+      type: "lesson_cancelled",
+      lessonId: lessonId,
+    }).returning();
+
     const io = req.app.get("io");
-    if (io) {
+    if (io && msg) {
+      io.emit("new_message", { message: msg, recipientId });
       io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
     }
 
