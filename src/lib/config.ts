@@ -9,6 +9,7 @@ interface AppConfig {
   GOOGLE_CLIENT_SECRET: string;
   PORT: number;
   HOST: string;
+  APP_URL: string;
 }
 
 const defaultConfig: AppConfig = {
@@ -18,7 +19,8 @@ const defaultConfig: AppConfig = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   PORT: parseInt(process.env.PORT || "3000"),
-  HOST: process.env.HOST || "0.0.0.0"
+  HOST: process.env.HOST || "0.0.0.0",
+  APP_URL: process.env.APP_URL || ""
 };
 
 let config: AppConfig = { ...defaultConfig };

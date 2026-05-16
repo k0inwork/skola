@@ -19,7 +19,7 @@ router.get("/google/url", (req, res) => {
     res.status(500).json({ error: "Google OAuth is not configured. Please add GOOGLE_CLIENT_ID to your secrets." });
     return;
   }
-  const baseUrl = config.HOST === '0.0.0.0' ? `${req.protocol}://${req.get("host")}` : `http://${config.HOST}:${config.PORT}`;
+  const baseUrl = config.APP_URL || `${req.protocol}://${req.get("host")}`;
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
   const params = new URLSearchParams({
     client_id: googleClientId,
@@ -41,7 +41,7 @@ router.get("/google/callback", async (req, res) => {
     return;
   }
 
-  const baseUrl = config.HOST === '0.0.0.0' ? `${req.protocol}://${req.get("host")}` : `http://${config.HOST}:${config.PORT}`;
+  const baseUrl = config.APP_URL || `${req.protocol}://${req.get("host")}`;
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
   
   if (!code) {
