@@ -6,6 +6,7 @@ import { Students } from "./pages/Students";
 import { Payments } from "./pages/Payments";
 import { CalendarView } from "./pages/Calendar";
 import { StudentProfile } from "./pages/StudentProfile";
+import { Messages } from "./pages/Messages";
 import { useAuthStore } from "./lib/store";
 
 export default function App() {
@@ -22,6 +23,8 @@ export default function App() {
           <Route path="students" element={<Students />} />
           <Route path="students/:id" element={<StudentProfile />} />
           <Route path="calendar" element={<CalendarView />} />
+          <Route path="messages" element={<Messages />} />
+          <Route path="messages/:partnerId" element={<Messages />} />
           <Route path="profile" element={<StudentProfile />} />
         </Route>
       </Routes>

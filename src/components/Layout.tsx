@@ -1,6 +1,6 @@
 import { Outlet, Navigate, Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
-import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon } from "lucide-react";
+import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon, MessageCircle } from "lucide-react";
 import clsx from "clsx";
 
 export function Layout() {
@@ -46,8 +46,8 @@ export function Layout() {
               </Link>
             </>
           )}
-          <Link 
-            to="/calendar" 
+          <Link
+            to="/calendar"
             className={clsx(
               "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
               location.pathname === "/calendar" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
@@ -55,6 +55,16 @@ export function Layout() {
           >
             <CalendarIcon className={clsx("w-5 h-5", location.pathname === "/calendar" ? "text-white" : "text-slate-500")} />
             Calendar
+          </Link>
+          <Link
+            to="/messages"
+            className={clsx(
+              "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
+              location.pathname.startsWith("/messages") ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
+            )}
+          >
+            <MessageCircle className={clsx("w-5 h-5", location.pathname.startsWith("/messages") ? "text-white" : "text-slate-500")} />
+            Messages
           </Link>
           {!isStudent && (
             <Link

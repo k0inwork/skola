@@ -13,6 +13,7 @@ import studentRoutes from "./src/routes/students.js";
 import paymentRoutes from "./src/routes/payments.js";
 import dashboardRoutes from "./src/routes/dashboard.js";
 import calendarRoutes from "./src/routes/calendar.js";
+import messageRoutes from "./src/routes/messages.js";
 
 import { config } from "./src/lib/config.js";
 
@@ -43,6 +44,7 @@ async function startServer() {
   app.use("/api/payments", paymentRoutes);
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/calendar", calendarRoutes);
+  app.use("/api/messages", messageRoutes);
 
   app.get("/api/users", requireAuth, async (req, res) => {
     try {
@@ -77,6 +79,10 @@ async function startServer() {
     console.log("Client connected:", socket.id);
     socket.on("disconnect", () => {
       console.log("Client disconnected:", socket.id);
+    });
+    // Join a room based on user ID for targeted messaging
+    socket.on("join", (userId: string) => {
+      socket.join(`user:${userId}`);
     });
   });
 

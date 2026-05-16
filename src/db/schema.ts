@@ -143,6 +143,29 @@ export const locations = pgTable("locations", {
     .defaultNow(),
 });
 
+export const messages = pgTable("messages", {
+  id: uuid("id")
+    .primaryKey()
+    .defaultRandom(),
+  senderId: uuid("sender_id")
+    .notNull()
+    .references(() => users.id),
+  recipientId: uuid("recipient_id")
+    .notNull()
+    .references(() => users.id),
+  lessonId: uuid("lesson_id")
+    .references(() => lessons.id),
+  content: text("content").notNull(),
+  type: text("type").default("chat"), // chat, reschedule_request, reschedule_approved, reschedule_declined
+  proposedDate: text("proposed_date"),
+  proposedStartTime: text("proposed_start_time"),
+  proposedEndTime: text("proposed_end_time"),
+  read: boolean("read").default(false),
+  createdAt: timestamp("created_at")
+    .notNull()
+    .defaultNow(),
+});
+
 export const notes = pgTable("notes", {
   id: uuid("id")
     .primaryKey()
