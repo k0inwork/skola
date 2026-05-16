@@ -25,3 +25,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token: null, refreshToken: null, role: null });
   },
 }));
+
+// Global 401 interceptor — auto-logout on expired token
+const originalFetch = window.fetch;
+window.fetch = async function (...args: Parameters<typeof fetch>) {
+  const response = await originalFetch.apply(this, args);
+
+  if (response.status === 401) {
+    // Only intercept API calls, not the login endpoint itself
+    const url = typeof args[0] === "string" ? args[0] : (args[0] as Request).url;
+    if (url.includes("/api/") && !url.includes("/api/auth/login")) {
+      useAuthStore.getState().logout();
+    }
+  }
+
+  return response;
+};
