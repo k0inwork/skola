@@ -105,25 +105,49 @@ export function StudentCalendar() {
   const getDaySlots = (date: Date): Slot[] => {
     const dateStr = format(date, "yyyy-MM-dd");
     const workingDay = workingDays.find(d => d.date === dateStr);
-    
-    // Always generate 6 slots
+
+    // If day is explicitly marked as not working, only show existing booked lessons
+    if (workingDay && !workingDay.isWorking) {
+      const dayLessons = bookedLessons.filter(l => l.date === dateStr);
+      return dayLessons.map(l => ({
+        date: dateStr,
+        time: l.startTime,
+        endTime: l.endTime,
+        isAvailable: false,
+        isMine: !!(l as any).isMine,
+        lesson: l,
+      }));
+    }
+
+    // If no workingDay record at all, also show no slots
+    if (!workingDay) {
+      const dayLessons = bookedLessons.filter(l => l.date === dateStr);
+      return dayLessons.map(l => ({
+        date: dateStr,
+        time: l.startTime,
+        endTime: l.endTime,
+        isAvailable: false,
+        isMine: !!(l as any).isMine,
+        lesson: l,
+      }));
+    }
+
     const slots: Slot[] = [];
     const baseDate = startOfDay(date);
-    
-    // Default hours if no workingDay
-    const startH = workingDay ? Number(workingDay.startTime.split(":")[0]) : 9;
-    const startM = workingDay ? Number(workingDay.startTime.split(":")[1]) : 0;
-    const slotDuration = workingDay ? workingDay.slotDurationMin : 60;
-    
+
+    const startH = Number(workingDay.startTime.split(":")[0]);
+    const startM = Number(workingDay.startTime.split(":")[1]);
+    const slotDuration = workingDay.slotDurationMin;
+
     let current = addMinutes(baseDate, startH * 60 + startM);
 
     for (let i = 0; i < 6; i++) {
         const timeStr = format(current, "HH:mm");
         const nextTime = addMinutes(current, slotDuration);
         const endTimeStr = format(nextTime, "HH:mm");
-        
-        const isAvailable = workingDay?.isWorking !== false && !bookedLessons.find(l => l.date === dateStr && l.startTime < endTimeStr && l.endTime > timeStr);
+
         const lesson = bookedLessons.find(l => l.date === dateStr && l.startTime < endTimeStr && l.endTime > timeStr);
+        const isAvailable = !lesson;
 
         slots.push({
             date: dateStr,
@@ -133,7 +157,7 @@ export function StudentCalendar() {
             isMine: !!(lesson as any)?.isMine,
             lesson
         });
-        
+
         current = nextTime;
     }
     return slots;

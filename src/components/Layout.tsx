@@ -8,8 +8,12 @@ import { io } from "socket.io-client";
 export function Layout() {
   const { token, role, logout } = useAuthStore();
   const location = useLocation();
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [calendarAlerts, setCalendarAlerts] = useState(0);
 
+  const isStudent = role === "client";
+
+  // Fetch unread message count
   useEffect(() => {
     if (!token) return;
     fetch("/api/messages/conversations", {
@@ -17,7 +21,7 @@ export function Layout() {
     })
       .then(r => r.ok ? r.json() : [])
       .then((convs: any[]) => {
-        setUnreadCount(convs.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0));
+        setUnreadMessages(convs.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0));
       })
       .catch(() => {});
 
@@ -28,18 +32,32 @@ export function Layout() {
       })
         .then(r => r.ok ? r.json() : [])
         .then((convs: any[]) => {
-          setUnreadCount(convs.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0));
+          setUnreadMessages(convs.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0));
         })
         .catch(() => {});
     });
 
-    return () => { socket.disconnect(); };
-  }, [token]);
+    // Listen for calendar updates (bookings/cancellations) for non-students
+    if (!isStudent) {
+      socket.on("calendar_update", () => {
+        setCalendarAlerts(prev => prev + 1);
+      });
+    }
 
-  // Reset badge when visiting messages page
+    return () => { socket.disconnect(); };
+  }, [token, isStudent]);
+
+  // Reset calendar badge when visiting calendar page
+  useEffect(() => {
+    if (location.pathname === "/calendar") {
+      setCalendarAlerts(0);
+    }
+  }, [location.pathname]);
+
+  // Reset message badge when visiting messages page
   useEffect(() => {
     if (location.pathname.startsWith("/messages")) {
-      setUnreadCount(0);
+      setUnreadMessages(0);
     }
   }, [location.pathname]);
 
@@ -47,28 +65,40 @@ export function Layout() {
     return <Navigate to="/login" replace />;
   }
 
-  const isStudent = role === "client";
-
   // Nav items shared between sidebar and bottom bar
   const navItems = [
     ...((!isStudent) ? [
       { to: "/dashboard", icon: BookOpen, label: "Dashboard", match: location.pathname === "/dashboard" },
       { to: "/students", icon: Users, label: "Students", match: location.pathname === "/students" || location.pathname.startsWith("/students/") },
     ] : []),
-    { to: "/calendar", icon: CalendarIcon, label: "Calendar", match: location.pathname === "/calendar" },
-    { to: "/messages", icon: MessageCircle, label: "Messages", match: location.pathname.startsWith("/messages"), badge: unreadCount },
+    { to: "/calendar", icon: CalendarIcon, label: "Calendar", match: location.pathname === "/calendar", badge: calendarAlerts },
+    { to: "/messages", icon: MessageCircle, label: "Messages", match: location.pathname.startsWith("/messages"), badge: unreadMessages },
     ...((!isStudent) ? [
       { to: "/payments", icon: CreditCard, label: "Payments", match: location.pathname === "/payments" },
     ] : []),
     { to: "/profile", icon: UserIcon, label: "Profile", match: location.pathname === "/profile" },
   ];
 
+  const renderBadge = (count: number, isMatch: boolean, small?: boolean) => {
+    if (!count || count <= 0 || isMatch) return null;
+    return (
+      <span className={clsx(
+        "bg-blue-600 text-white font-bold rounded-full flex items-center justify-center leading-none",
+        small
+          ? "absolute -top-1 -right-2 text-[8px] w-4 h-4"
+          : "text-[10px] px-1.5 py-0.5 ml-auto"
+      )}>
+        {small ? (count > 9 ? "9+" : count) : (count > 99 ? "99+" : count)}
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 bg-slate-900 text-white flex-col">
         <div className="p-6">
-          <h1 className="text-2xl font-bold tracking-tight">Skola</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Olaines autoskola</h1>
         </div>
 
         <nav className="flex-1 px-4 space-y-2">
@@ -83,11 +113,7 @@ export function Layout() {
             >
               <item.icon className={clsx("w-5 h-5", item.match ? "text-white" : "text-slate-500")} />
               {item.label}
-              {item.badge && item.badge > 0 && !item.match && (
-                <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-auto">
-                  {item.badge > 99 ? "99+" : item.badge}
-                </span>
-              )}
+              {item.badge !== undefined && renderBadge(item.badge, item.match)}
             </Link>
           ))}
         </nav>
@@ -122,11 +148,7 @@ export function Layout() {
             >
               <div className="relative">
                 <item.icon className="w-5 h-5" />
-                {item.badge && item.badge > 0 && !item.match && (
-                  <span className="absolute -top-1.5 -right-2 bg-blue-600 text-white text-[8px] font-bold w-4 h-4 flex items-center justify-center rounded-full">
-                    {item.badge > 9 ? "9+" : item.badge}
-                  </span>
-                )}
+                {item.badge !== undefined && renderBadge(item.badge, item.match, true)}
               </div>
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>

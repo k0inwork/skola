@@ -157,12 +157,24 @@ export function InstructorCalendar() {
     const workingDay = workingDays.find(d => d.date === dateStr);
     const isOff = !workingDay || !workingDay.isWorking;
 
+    // For off days, only show existing booked lessons — no empty slots
+    if (isOff) {
+      const dayLessons = bookedLessons.filter(l => l.date === dateStr);
+      return dayLessons.map(l => ({
+        date: dateStr,
+        time: l.startTime,
+        endTime: l.endTime,
+        isAvailable: false,
+        lesson: l,
+      }));
+    }
+
     const slots: Slot[] = [];
     const baseDate = startOfDay(date);
 
-    const startTimeStr = isOff ? "09:00" : workingDay!.startTime;
-    const endTimeStr = isOff ? "18:00" : workingDay!.endTime;
-    const duration = isOff ? 90 : workingDay!.slotDurationMin;
+    const startTimeStr = workingDay!.startTime;
+    const endTimeStr = workingDay!.endTime;
+    const duration = workingDay!.slotDurationMin;
 
     const [startH, startM] = startTimeStr.split(":").map(Number);
     const [endH, endM] = endTimeStr.split(":").map(Number);
@@ -170,8 +182,7 @@ export function InstructorCalendar() {
     let current = addMinutes(baseDate, startH * 60 + startM);
     const end = addMinutes(baseDate, endH * 60 + endM);
 
-    let slotsCount = 0;
-    while ((isBefore(current, end) || current.getTime() === end.getTime()) && (isOff ? slotsCount < 6 : true)) {
+    while (isBefore(current, end) || current.getTime() === end.getTime()) {
       const timeStr = format(current, "HH:mm");
       const nextTime = addMinutes(current, duration);
       const endSlotTime = format(nextTime, "HH:mm");
@@ -182,7 +193,6 @@ export function InstructorCalendar() {
 
       slots.push({ date: dateStr, time: timeStr, endTime: endSlotTime, isAvailable: !lesson, lesson });
       current = nextTime;
-      slotsCount++;
     }
     return slots;
   };

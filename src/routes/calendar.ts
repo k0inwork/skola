@@ -76,14 +76,13 @@ router.get("/slots", async (req, res) => {
   try {
     const { startDate, endDate, instructorId } = req.query as Record<string, string>;
     
-    // fetch working days in range
+    // fetch working days in range (include non-working days so frontend can show "Off" state)
     const workingDays = await db.select()
       .from(instructorWorkingDays)
       .where(and(
         eq(instructorWorkingDays.instructorId, instructorId),
         gte(instructorWorkingDays.date, startDate),
-        lte(instructorWorkingDays.date, endDate),
-        eq(instructorWorkingDays.isWorking, true)
+        lte(instructorWorkingDays.date, endDate)
       ));
 
     const userStudentId = req.userRole === "client" 
