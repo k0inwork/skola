@@ -172,9 +172,9 @@ export function InstructorCalendar() {
     const baseDate = startOfDay(date);
 
     // Use configured times if working day is set, otherwise defaults
-    const startTimeStr = workingDay ? workingDay.startTime : "09:00";
-    const endTimeStr = workingDay ? workingDay.endTime : "18:00";
-    const duration = workingDay ? workingDay.slotDurationMin : 90;
+    const startTimeStr = workingDay?.startTime || "09:00";
+    const endTimeStr = workingDay?.endTime || "18:00";
+    const duration = workingDay?.slotDurationMin || 90;
 
     const [startH, startM] = startTimeStr.split(":").map(Number);
     const [endH, endM] = endTimeStr.split(":").map(Number);
@@ -194,6 +194,24 @@ export function InstructorCalendar() {
       slots.push({ date: dateStr, time: timeStr, endTime: endSlotTime, isAvailable: !lesson, lesson });
       current = nextTime;
     }
+
+    // Append any booked lessons that didn't land on a generated slot
+    const slotLessons = slots.filter(s => s.lesson).map(s => s.lesson!.id);
+    bookedLessons
+      .filter(l => l.date === dateStr && !slotLessons.includes(l.id))
+      .forEach(l => {
+        slots.push({
+          date: dateStr,
+          time: l.startTime,
+          endTime: l.endTime,
+          isAvailable: false,
+          lesson: l,
+        });
+      });
+
+    // Sort by time
+    slots.sort((a, b) => a.time.localeCompare(b.time));
+
     return slots;
   };
 
