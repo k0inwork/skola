@@ -285,7 +285,8 @@ router.post("/update-lesson/:lessonId", async (req, res) => {
 router.post("/cancel-lesson/:lessonId", async (req, res) => {
   try {
     const { lessonId } = req.params;
-    
+    const { reason } = req.body as { reason?: string };
+
     const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
     if (!lesson) {
       res.status(404).json({ error: "Lesson not found" });
@@ -304,6 +305,29 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
     await db.update(lessons)
       .set({ status: "canceled" })
       .where(eq(lessons.id, lessonId));
+
+    // Send cancellation message to the student
+    if (lesson.studentId) {
+      const [student] = await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1);
+      if (student?.userId) {
+        const { messages: msgs } = await import("../db/schema.js");
+        const content = reason
+          ? `Lesson on ${lesson.date} (${lesson.startTime}-${lesson.endTime}) has been cancelled. Reason: ${reason}`
+          : `Lesson on ${lesson.date} (${lesson.startTime}-${lesson.endTime}) has been cancelled.`;
+        const [msg] = await db.insert(msgs).values({
+          senderId: req.userId,
+          recipientId: student.userId,
+          content,
+          type: "lesson_cancelled",
+          lessonId: lessonId,
+        }).returning();
+
+        const io = req.app.get("io");
+        if (io && msg) {
+          io.emit("new_message", { message: msg, recipientId: student.userId });
+        }
+      }
+    }
 
     const io = req.app.get("io");
     if (io) {

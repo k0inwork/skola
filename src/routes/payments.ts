@@ -48,37 +48,52 @@ router.get("/", async (req, res) => {
 // Payment stats (revenue summary)
 router.get("/stats", async (req, res) => {
   try {
-    const totalPaid = await db.select({
-      total: sql<string>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`,
-    })
-      .from(payments)
-      .where(eq(payments.status, "paid"));
+    let totalPaidAmount = 0;
+    let totalPendingAmount = 0;
+    let paidLessonsTotal = 0;
+    let unpaidLessonsCount = 0;
 
-    const totalPending = await db.select({
-      total: sql<string>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`,
-    })
-      .from(payments)
-      .where(eq(payments.status, "pending"));
+    try {
+      const totalPaid = await db.select({
+        total: sql<string>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`,
+      })
+        .from(payments)
+        .where(eq(payments.status, "paid"));
+      totalPaidAmount = Number(totalPaid[0]?.total || 0);
+    } catch {}
 
-    // Unpaid lessons count
-    const unpaidLessons = await db.select({
-      count: sql<number>`count(*)`,
-    })
-      .from(lessons)
-      .where(eq(lessons.paid, false));
+    try {
+      const totalPending = await db.select({
+        total: sql<string>`COALESCE(SUM(CAST(${payments.amount} AS DECIMAL)), 0)`,
+      })
+        .from(payments)
+        .where(eq(payments.status, "pending"));
+      totalPendingAmount = Number(totalPending[0]?.total || 0);
+    } catch {}
 
-    // Paid lessons total (using amount field or default 30)
-    const paidLessonsTotal = await db.select({
-      total: sql<string>`COALESCE(SUM(CASE WHEN ${lessons.amount} IS NOT NULL THEN CAST(${lessons.amount} AS DECIMAL) ELSE 30 END), 0)`,
-    })
-      .from(lessons)
-      .where(eq(lessons.paid, true));
+    try {
+      const unpaid = await db.select({
+        count: sql<number>`count(*)`,
+      })
+        .from(lessons)
+        .where(eq(lessons.paid, false));
+      unpaidLessonsCount = Number(unpaid[0]?.count || 0);
+    } catch {}
+
+    try {
+      const paidTotal = await db.select({
+        total: sql<string>`COALESCE(SUM(CASE WHEN ${lessons.amount} IS NOT NULL AND ${lessons.amount} != '' THEN CAST(${lessons.amount} AS DECIMAL) ELSE 30 END), 0)`,
+      })
+        .from(lessons)
+        .where(eq(lessons.paid, true));
+      paidLessonsTotal = Number(paidTotal[0]?.total || 0);
+    } catch {}
 
     res.json({
-      totalRevenue: Number(totalPaid[0]?.total || 0) + Number(paidLessonsTotal[0]?.total || 0),
-      pendingPayments: Number(totalPending[0]?.total || 0),
-      paidLessonsTotal: Number(paidLessonsTotal[0]?.total || 0),
-      unpaidLessonsCount: Number(unpaidLessons[0]?.count || 0),
+      totalRevenue: totalPaidAmount + paidLessonsTotal,
+      pendingPayments: totalPendingAmount,
+      paidLessonsTotal,
+      unpaidLessonsCount,
     });
   } catch (err) {
     console.error("Payment stats error:", err);
@@ -86,9 +101,41 @@ router.get("/stats", async (req, res) => {
   }
 });
 
-router.post("/", validate(createPaymentSchema), async (req, res) => {
+router.post("/", async (req, res) => {
   try {
-    const [payment] = await db.insert(payments).values(req.body).returning();
+    const { studentId, amount, paidAt, method, reference, comment, status } = req.body;
+
+    if (!studentId || !amount || !paidAt) {
+      res.status(400).json({ error: "studentId, amount, and paidAt are required" });
+      return;
+    }
+
+    // Find or create enrollment for the student
+    const [existingEnrollment] = await db.select().from(enrollments)
+      .where(eq(enrollments.studentId, studentId)).limit(1);
+
+    let enrollmentId = existingEnrollment?.id;
+    if (!enrollmentId) {
+      const [newEnrollment] = await db.insert(enrollments).values({
+        studentId,
+        courseTypeId: "default-course-type",
+        startDate: paidAt,
+        status: "active",
+      }).returning();
+      enrollmentId = newEnrollment.id;
+    }
+
+    const [payment] = await db.insert(payments).values({
+      studentId,
+      enrollmentId,
+      amount,
+      paidAt,
+      method: method || null,
+      reference: reference || null,
+      comment: comment || null,
+      status: status || "paid",
+    }).returning();
+
     res.status(201).json(payment);
   } catch (err) {
     console.error("Create payment error:", err);

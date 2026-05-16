@@ -23,6 +23,7 @@ export default function App() {
           <Route path="students" element={<Students />} />
           <Route path="students/:id" element={<StudentProfile />} />
           <Route path="calendar" element={<CalendarView />} />
+          <Route path="payments" element={<Payments />} />
           <Route path="messages" element={<Messages />} />
           <Route path="messages/:partnerId" element={<Messages />} />
           <Route path="profile" element={<StudentProfile />} />

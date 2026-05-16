@@ -1,7 +1,7 @@
 import React, { useState, useEffect, FormEvent } from "react";
 import { format, addDays, startOfWeek, isSameDay, parseISO, isAfter, isBefore, addMinutes, startOfDay } from "date-fns";
 import { useAuthStore } from "../lib/store";
-import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
 
@@ -74,6 +74,11 @@ export function InstructorCalendar() {
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [rescheduleLesson, setRescheduleLesson] = useState<BookedLesson | null>(null);
   const [rescheduleForm, setRescheduleForm] = useState({ date: "", startTime: "", endTime: "" });
+
+  // Cancel state
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [cancelLesson, setCancelLesson] = useState<BookedLesson | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -585,15 +590,10 @@ export function InstructorCalendar() {
             </button>
 
             <button
-              onClick={async () => {
-                if (confirm("Are you sure you want to cancel this lesson?")) {
-                  const res = await fetch(`/api/calendar/cancel-lesson/${selectedSlot.lesson!.id}`, {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token}` }
-                  });
-                  if (res.ok) setSelectedSlot(null);
-                  else alert("Failed to cancel lesson");
-                }
+              onClick={() => {
+                setCancelLesson(selectedSlot.lesson!);
+                setCancelReason("");
+                setIsCancelOpen(true);
               }}
               className="w-full mt-2 bg-red-50 text-red-600 px-4 py-2 rounded hover:bg-red-100 transition text-sm font-medium border border-red-100"
             >
@@ -665,6 +665,59 @@ export function InstructorCalendar() {
                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
               >
                 Reschedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel lesson modal */}
+      {isCancelOpen && cancelLesson && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Cancel Lesson</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {cancelLesson.date} {cancelLesson.startTime}-{cancelLesson.endTime} with {cancelLesson.studentFirstName} {cancelLesson.studentLastName}
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Reason (optional)</label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Why is the lesson being cancelled?"
+                className="w-full p-2 border rounded text-sm"
+                rows={3}
+                autoFocus
+              />
+            </div>
+            <p className="text-xs text-gray-400 mb-4">The student will receive a message about this cancellation.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setIsCancelOpen(false); setCancelLesson(null); }}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={async () => {
+                  const res = await fetch(`/api/calendar/cancel-lesson/${cancelLesson.id}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ reason: cancelReason || undefined })
+                  });
+                  if (res.ok) {
+                    setIsCancelOpen(false);
+                    setCancelLesson(null);
+                    setSelectedSlot(null);
+                    fetchCalendarData();
+                  } else {
+                    const data = await res.json();
+                    alert(data.error || "Failed to cancel lesson");
+                  }
+                }}
+                className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition flex items-center justify-center gap-2"
+              >
+                <XCircle className="w-4 h-4" /> Cancel Lesson
               </button>
             </div>
           </div>

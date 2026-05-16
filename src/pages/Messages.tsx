@@ -355,6 +355,17 @@ export function Messages() {
                   );
                 }
 
+                if (msg.type === "lesson_cancelled") {
+                  return (
+                    <div key={msg.id} className="flex justify-center">
+                      <div className="bg-red-50 text-red-800 px-4 py-2 rounded-lg text-sm border border-red-200 flex items-center gap-2">
+                        <XCircle className="w-4 h-4 text-red-600" />
+                        {msg.content}
+                      </div>
+                    </div>
+                  );
+                }
+
                 // Regular chat message
                 return (
                   <div key={msg.id} className={clsx("flex", isMine ? "justify-end" : "justify-start")}>
