@@ -1,6 +1,6 @@
 import { Outlet, Navigate, Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
-import { LogOut, Users, BookOpen, CreditCard } from "lucide-react";
+import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon } from "lucide-react";
 import clsx from "clsx";
 
 export function Layout() {
@@ -21,13 +21,13 @@ export function Layout() {
         
         <nav className="flex-1 px-4 space-y-2">
           <Link 
-            to="/" 
+            to="/dashboard" 
             className={clsx(
               "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
-              location.pathname === "/" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
+              location.pathname === "/dashboard" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
             )}
           >
-            <BookOpen className={clsx("w-5 h-5", location.pathname === "/" ? "text-white" : "text-slate-500")} />
+            <BookOpen className={clsx("w-5 h-5", location.pathname === "/dashboard" ? "text-white" : "text-slate-500")} />
             Dashboard
           </Link>
           <Link 
@@ -39,6 +39,16 @@ export function Layout() {
           >
             <Users className={clsx("w-5 h-5", location.pathname === "/students" ? "text-white" : "text-slate-500")} />
             Students
+          </Link>
+          <Link 
+            to="/calendar" 
+            className={clsx(
+              "flex items-center gap-3 px-3 py-2 rounded-md transition-colors",
+              location.pathname === "/calendar" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800/50 hover:text-white"
+            )}
+          >
+            <CalendarIcon className={clsx("w-5 h-5", location.pathname === "/calendar" ? "text-white" : "text-slate-500")} />
+            Calendar
           </Link>
           <Link 
             to="/payments" 

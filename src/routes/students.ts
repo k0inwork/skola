@@ -59,14 +59,16 @@ router.get("/", async (req, res) => {
 
 router.post("/", validate(createStudentSchema), async (req, res) => {
   try {
-    const studentData = req.body;
+    const { createAccount, password, ...studentData } = req.body;
+    
+    // Normalize empty strings to null for better DB constraint handling
+    if (!studentData.email) studentData.email = null;
+    if (!studentData.phone) studentData.phone = null;
+    
     let userId = null;
 
-    if (studentData.email) {
-      const passwordHash = await hash(
-        Math.random().toString(36).slice(2, 10),
-        10
-      );
+    if (createAccount && studentData.email && password) {
+      const passwordHash = await hash(password, 10);
       const [user] = await db.insert(users).values({
         email: studentData.email,
         passwordHash,

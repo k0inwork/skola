@@ -8,6 +8,7 @@ import authRoutes from "./src/routes/auth.js";
 import studentRoutes from "./src/routes/students.js";
 import paymentRoutes from "./src/routes/payments.js";
 import dashboardRoutes from "./src/routes/dashboard.js";
+import calendarRoutes from "./src/routes/calendar.js";
 
 async function startServer() {
   const app = express();
@@ -24,6 +25,7 @@ async function startServer() {
   app.use("/api/students", studentRoutes);
   app.use("/api/payments", paymentRoutes);
   app.use("/api/dashboard", dashboardRoutes);
+  app.use("/api/calendar", calendarRoutes);
 
   app.get("/api/users", async (req, res) => {
     try {

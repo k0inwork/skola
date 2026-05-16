@@ -62,6 +62,8 @@ export const lessons = sqliteTable("lessons", {
   studentId: text("student_id")
     .notNull()
     .references(() => students.id),
+  instructorId: text("instructor_id")
+    .references(() => users.id),
   date: text("date").notNull(),
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
@@ -75,6 +77,20 @@ export const lessons = sqliteTable("lessons", {
     .notNull()
     .$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp" }),
+});
+
+export const instructorWorkingDays = sqliteTable("instructor_working_days", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  instructorId: text("instructor_id")
+    .notNull()
+    .references(() => users.id),
+  date: text("date").notNull(),
+  isWorking: integer("is_working", { mode: "boolean" }).notNull().default(true),
+  startTime: text("start_time").default("09:00"),
+  endTime: text("end_time").default("17:00"),
+  slotDurationMin: integer("slot_duration_min").default(60),
 });
 
 export const payments = sqliteTable("payments", {
