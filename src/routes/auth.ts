@@ -130,7 +130,7 @@ router.get("/google/callback", async (req, res) => {
                   "https://ais-dev-ligkvq4zk6tql2qp7vyfk7-588853010945.us-east1.run.app",
                   "https://ais-pre-ligkvq4zk6tql2qp7vyfk7-588853010945.us-east1.run.app"
                 ];
-                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', payload: payload }, '*'); 
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', payload: payload }, '${config.APP_URL}');
                 window.close();
               } else {
                 window.location.href = '${config.APP_URL || "/"}/';

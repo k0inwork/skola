@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
 import { exec } from "child_process";
@@ -22,20 +24,44 @@ import { config } from "./src/lib/config.js";
 async function startServer() {
   const app = express();
   const httpServer = createServer(app);
+
+  const PORT = config.PORT;
+  const HOST = config.HOST;
+  const APP_URL = config.APP_URL;
+
+  const allowedOrigins = [
+    APP_URL,
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ].filter(Boolean);
+
   const io = new Server(httpServer, {
     cors: {
-      origin: "*",
+      origin: allowedOrigins,
       methods: ["GET", "POST"]
     }
   });
 
-  const PORT = config.PORT;
-  const HOST = config.HOST;
-
   app.set("io", io);
 
-  app.use(cors());
+  app.use(helmet());
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  }));
   app.use(express.json());
+
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: "Too many login attempts. Try again in 15 minutes." },
+  });
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -73,6 +99,7 @@ async function startServer() {
   });
 
   app.use("/api/auth", authRoutes);
+  app.use("/api/auth/login", loginLimiter);
   app.use("/api/students", studentRoutes);
   app.use("/api/payments", paymentRoutes);
   app.use("/api/dashboard", dashboardRoutes);

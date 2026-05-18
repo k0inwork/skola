@@ -8,3 +8,4 @@ skola.db
 skola.db-journal
 .env*
 !.env.example
+config.json

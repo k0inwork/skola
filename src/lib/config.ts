@@ -14,8 +14,8 @@ interface AppConfig {
 
 const defaultConfig: AppConfig = {
   DATABASE_URL: process.env.DATABASE_URL || "",
-  JWT_SECRET: process.env.JWT_SECRET || "default_jwt_secret_change_me",
-  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || "default_refresh_secret_change_me",
+  JWT_SECRET: process.env.JWT_SECRET || "",
+  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || "",
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   PORT: parseInt(process.env.PORT || "3000"),

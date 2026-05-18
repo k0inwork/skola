@@ -3,8 +3,11 @@ import jwt from "jsonwebtoken";
 
 import { config } from "../lib/config.js";
 
-const SECRET = config.JWT_SECRET || "fallback_secret_for_development";
-const REFRESH_SECRET = config.JWT_REFRESH_SECRET || "fallback_refresh_secret";
+if (!config.JWT_SECRET || !config.JWT_REFRESH_SECRET) {
+  throw new Error("FATAL: JWT_SECRET and JWT_REFRESH_SECRET must be set. Refusing to start with no secrets.");
+}
+const SECRET = config.JWT_SECRET;
+const REFRESH_SECRET = config.JWT_REFRESH_SECRET;
 
 export function generateTokenPair(payload: { userId: string; role: string }) {
   const accessToken = jwt.sign(payload, SECRET, { expiresIn: "8h" });
