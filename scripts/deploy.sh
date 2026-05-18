@@ -29,7 +29,7 @@ echo "$(date) — restarting" >> "$LOG"
 kill $(lsof -ti:3000) 2>/dev/null || true
 sleep 1
 cd "$SKOLA_DIR"
-nohup node dist/server.cjs > "$LOGDIR/server.log" 2>&1 &
+nohup env NODE_ENV=production node dist/server.cjs > "$LOGDIR/server.log" 2>&1 &
 
 echo "$(date) — deploy done" >> "$LOG"
 ln -sf "$LOG" "$LOGDIR/latest.log"
