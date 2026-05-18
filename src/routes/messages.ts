@@ -118,6 +118,15 @@ router.post("/", async (req, res) => {
       return;
     }
 
+    // Client can only message instructors/admins
+    if (req.userRole === "client") {
+      const [recipientUser] = await db.select().from(users).where(eq(users.id, recipientId)).limit(1);
+      if (!recipientUser || (recipientUser.role !== "instructor" && recipientUser.role !== "admin")) {
+        res.status(403).json({ error: "Forbidden: clients can only message instructors" });
+        return;
+      }
+    }
+
     const [msg] = await db.insert(messages).values({
       senderId: req.userId,
       recipientId,

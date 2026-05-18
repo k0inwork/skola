@@ -126,6 +126,14 @@ router.get("/:id", async (req, res) => {
       res.status(404).json({ error: "Student not found" });
       return;
     }
+    // Client can only view their own profile
+    if (req.userRole === "client") {
+      const [ownStudent] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+      if (!ownStudent || ownStudent.id !== req.params.id) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+    }
     res.json(student[0]);
   } catch (err) {
     console.error("Get student error:", err);
@@ -135,6 +143,14 @@ router.get("/:id", async (req, res) => {
 
 router.patch("/:id", validate(updateStudentSchema), async (req, res) => {
   try {
+    // Client can only update their own profile
+    if (req.userRole === "client") {
+      const [ownStudent] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+      if (!ownStudent || ownStudent.id !== req.params.id) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+    }
     const studentData = req.body;
     const [updated] = await db
       .update(students)
@@ -155,6 +171,14 @@ router.patch("/:id", validate(updateStudentSchema), async (req, res) => {
 
 router.get("/:id/lessons", async (req, res) => {
   try {
+    // Client can only view own lessons
+    if (req.userRole === "client") {
+      const [ownStudent] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+      if (!ownStudent || ownStudent.id !== req.params.id) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+    }
     const studentLessons = await db.select()
         .from(lessons)
         .where(eq(lessons.studentId, req.params.id))

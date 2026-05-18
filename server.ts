@@ -4,6 +4,7 @@ import path from "path";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
 import { exec } from "child_process";
@@ -20,6 +21,7 @@ import calendarRoutes from "./src/routes/calendar.js";
 import messageRoutes from "./src/routes/messages.js";
 
 import { config } from "./src/lib/config.js";
+import { verifyToken } from "./src/middleware/auth.js";
 
 async function startServer() {
   const app = express();
@@ -45,6 +47,7 @@ async function startServer() {
   app.set("io", io);
 
   app.use(helmet());
+  app.use(cookieParser());
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
@@ -136,13 +139,35 @@ async function startServer() {
   }
 
   io.on("connection", (socket) => {
-    console.log("Client connected:", socket.id);
+    // Authenticate socket — verify token from handshake
+    const token = socket.handshake.auth?.token;
+    let socketUserId: string | undefined;
+    if (token) {
+      try {
+        const payload = verifyToken(token);
+        socketUserId = payload.userId;
+        console.log("Socket authenticated:", socket.id, "user:", socketUserId);
+      } catch {
+        console.log("Socket auth failed, disconnecting:", socket.id);
+        socket.disconnect();
+        return;
+      }
+    } else {
+      console.log("Socket missing token, disconnecting:", socket.id);
+      socket.disconnect();
+      return;
+    }
+
     socket.on("disconnect", () => {
       console.log("Client disconnected:", socket.id);
     });
-    // Join a room based on user ID for targeted messaging
+    // Join a room based on user ID — only allow joining your own room
     socket.on("join", (userId: string) => {
-      socket.join(`user:${userId}`);
+      if (userId === socketUserId) {
+        socket.join(`user:${userId}`);
+      } else {
+        console.warn(`Socket ${socket.id} tried to join room for user ${userId} but is authenticated as ${socketUserId}`);
+      }
     });
   });
 

@@ -28,7 +28,7 @@ export function Layout() {
       })
       .catch(() => {});
 
-    const socket = io();
+    const socket = io({ auth: { token } });
     socket.on("new_message", () => {
       fetch("/api/messages/conversations", {
         headers: { Authorization: `Bearer ${token}` }

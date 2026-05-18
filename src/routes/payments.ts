@@ -5,6 +5,12 @@ import { payments, students, lessons, enrollments } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate, createPaymentSchema, updatePaymentSchema } from "../lib/validation.js";
 
+async function getClientStudentId(req: any): Promise<string | null> {
+  if (req.userRole !== "client") return null;
+  const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+  return student?.id || null;
+}
+
 const router = Router();
 
 router.use(requireAuth);
@@ -15,6 +21,16 @@ router.get("/", async (req, res) => {
     const { studentId, status, startDate, endDate } = req.query as Record<string, string>;
 
     const conditions = [];
+
+    // Client can only see own payments
+    if (req.userRole === "client") {
+      const ownStudentId = await getClientStudentId(req);
+      if (!ownStudentId) {
+        res.json([]);
+        return;
+      }
+      conditions.push(eq(payments.studentId, ownStudentId));
+    }
     if (studentId) conditions.push(eq(payments.studentId, studentId));
     if (status) conditions.push(eq(payments.status, status));
     if (startDate) conditions.push(gte(payments.paidAt, startDate));
@@ -102,6 +118,10 @@ router.get("/stats", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  if (req.userRole !== "admin" && req.userRole !== "instructor") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
   try {
     const { studentId, amount, paidAt, method, reference, comment, status } = req.body;
 
@@ -144,6 +164,10 @@ router.post("/", async (req, res) => {
 });
 
 router.patch("/:id", validate(updatePaymentSchema), async (req, res) => {
+  if (req.userRole !== "admin" && req.userRole !== "instructor") {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
   try {
     const [updated] = await db.update(payments)
       .set(req.body)

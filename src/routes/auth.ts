@@ -21,19 +21,30 @@ router.get("/google/url", (req, res) => {
   }
   const baseUrl = config.APP_URL || `${req.protocol}://${req.get("host")}`;
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
+  const state = crypto.randomBytes(16).toString("hex");
+  res.cookie("oauth_state", state, { httpOnly: true, maxAge: 600000, sameSite: "lax" });
   const params = new URLSearchParams({
     client_id: googleClientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "email profile",
+    state,
   });
   res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
 });
 
 router.get("/google/callback", async (req, res) => {
-  const { code } = req.query;
+  const { code, state } = req.query;
   const clientId = config.GOOGLE_CLIENT_ID;
   const clientSecret = config.GOOGLE_CLIENT_SECRET;
+
+  // Verify state param to prevent CSRF
+  const savedState = req.cookies?.oauth_state;
+  if (!savedState || !state || savedState !== state) {
+    res.status(400).send("Invalid or missing OAuth state parameter.");
+    return;
+  }
+  res.clearCookie("oauth_state");
 
   if (!clientId || !clientSecret) {
     console.error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET");

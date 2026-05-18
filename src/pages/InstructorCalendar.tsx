@@ -127,7 +127,7 @@ export function InstructorCalendar() {
   }, [token]);
 
   useEffect(() => {
-    const socket = io();
+    const socket = io({ auth: { token } });
     socket.on("calendar_update", (data) => {
       if (!data.instructorId || data.instructorId === selectedInstructor || data.instructorId === "all") {
         fetchCalendarData();

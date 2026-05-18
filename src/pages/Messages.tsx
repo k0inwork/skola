@@ -70,7 +70,7 @@ export function Messages() {
 
   useEffect(() => {
     // Socket.IO for real-time
-    const socket = io();
+    const socket = io({ auth: { token } });
     socketRef.current = socket;
 
     if (userId) {
