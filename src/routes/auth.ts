@@ -129,22 +129,8 @@ router.get("/google/callback", async (req, res) => {
     });
     
     const appUrl = config.APP_URL || "/";
-    res.send(`
-      <html>
-        <body>
-          <script>
-            (function() {
-              const payload = ${JSON.stringify({ accessToken, refreshToken, role: user.role })};
-              localStorage.setItem("token", payload.accessToken);
-              localStorage.setItem("refreshToken", payload.refreshToken);
-              localStorage.setItem("role", payload.role);
-              window.location.href = '${appUrl}/';
-            })();
-          </script>
-          <p>Logging in...</p>
-        </body>
-      </html>
-    `);
+    const params = new URLSearchParams({ accessToken, refreshToken, role: user.role });
+    res.redirect(`${appUrl}/oauth-callback?${params.toString()}`);
   } catch (err) {
     console.error("Google OAuth error:", err);
     res.status(500).send("Internal server error during OAuth");
