@@ -9,34 +9,12 @@ export function Login() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Allow localhost, *.run.app (Google AI Studio) and *.onrender.com (Production)
-      if (!event.origin.includes('localhost') && 
-          !event.origin.endsWith('.run.app') && 
-          !event.origin.endsWith('.onrender.com') &&
-          !event.origin.endsWith('.ddns.net')) {
-        return;
-      }
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        const { accessToken, refreshToken, role } = event.data.payload;
-        setAuth(accessToken, refreshToken, role);
-        navigate("/");
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
   const handleGoogleLogin = async () => {
     try {
       const res = await fetch("/api/auth/google/url");
       if (!res.ok) throw new Error("Failed to get Google auth URL");
       const { url } = await res.json();
-      const authWindow = window.open(url, "google_oauth", "width=500,height=600");
-      if (!authWindow) {
-        setError("Please allow popups to sign in with Google.");
-      }
+      window.location.href = url;
     } catch (err: any) {
       setError(err.message || "Network error");
     }
