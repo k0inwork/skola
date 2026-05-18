@@ -4,6 +4,8 @@ import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
+import { exec } from "child_process";
+import fs from "fs";
 import { Server } from "socket.io";
 import { db } from "./src/db/index.js";
 import { users } from "./src/db/schema.js";
@@ -37,6 +39,37 @@ async function startServer() {
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // --- GitHub webhook for auto-deploy ---
+  app.post("/webhook", (req, res) => {
+    const ref = req.body?.ref;
+    if (!ref || !ref.endsWith("/main")) {
+      return res.json({ status: "ignored", ref });
+    }
+    res.json({ status: "deploying" });
+    exec("nohup bash scripts/deploy.sh > /tmp/skola-deploy-hook.log 2>&1 &", { cwd: process.env.SKOLA_DIR || "/root/skola" }, (err) => {
+      if (err) console.error("deploy launch error:", err.message);
+    });
+  });
+
+  // --- Deploy logs ---
+  const LOGDIR = "/tmp/skola-deploy";
+  app.get("/deploy/logs", (req, res) => {
+    try {
+      const files = fs.readdirSync(LOGDIR).filter(f => f.endsWith(".log")).sort().reverse();
+      res.json({ logs: files });
+    } catch {
+      res.json({ logs: [] });
+    }
+  });
+  app.get("/deploy/logs/:name", (req, res) => {
+    const name = req.params.name.replace(/[^a-zA-Z0-9._-]/g, "");
+    try {
+      res.type("text/plain").send(fs.readFileSync(`${LOGDIR}/${name}`, "utf8"));
+    } catch {
+      res.status(404).json({ error: "log not found" });
+    }
   });
 
   app.use("/api/auth", authRoutes);
