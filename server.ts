@@ -46,7 +46,9 @@ async function startServer() {
 
   app.set("io", io);
 
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: process.env.NODE_ENV === "production" ? undefined : false,
+  }));
   app.use(cookieParser());
   app.use(cors({
     origin: (origin, callback) => {
