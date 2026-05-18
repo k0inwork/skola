@@ -128,27 +128,20 @@ router.get("/google/callback", async (req, res) => {
       role: user.role,
     });
     
+    const appUrl = config.APP_URL || "/";
     res.send(`
       <html>
         <body>
           <script>
             (function() {
               const payload = ${JSON.stringify({ accessToken, refreshToken, role: user.role })};
-              if (window.opener) {
-                // Allow both ai.studio and Render origins
-                const allowedOrigins = [
-                  "https://accounts.google.com", 
-                  "https://ais-dev-ligkvq4zk6tql2qp7vyfk7-588853010945.us-east1.run.app",
-                  "https://ais-pre-ligkvq4zk6tql2qp7vyfk7-588853010945.us-east1.run.app"
-                ];
-                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', payload: payload }, '${config.APP_URL}');
-                window.close();
-              } else {
-                window.location.href = '${config.APP_URL || "/"}/';
-              }
+              localStorage.setItem("token", payload.accessToken);
+              localStorage.setItem("refreshToken", payload.refreshToken);
+              localStorage.setItem("role", payload.role);
+              window.location.href = '${appUrl}/';
             })();
           </script>
-          <p>Logged in! You can close this window now.</p>
+          <p>Logging in...</p>
         </body>
       </html>
     `);
