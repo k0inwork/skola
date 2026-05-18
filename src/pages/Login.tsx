@@ -14,7 +14,8 @@ export function Login() {
       // Allow localhost, *.run.app (Google AI Studio) and *.onrender.com (Production)
       if (!event.origin.includes('localhost') && 
           !event.origin.endsWith('.run.app') && 
-          !event.origin.endsWith('.onrender.com')) {
+          !event.origin.endsWith('.onrender.com') &&
+          !event.origin.endsWith('.ddns.net')) {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
