@@ -10,6 +10,10 @@ interface AppConfig {
   PORT: number;
   HOST: string;
   APP_URL: string;
+  SMTP_HOST: string;
+  SMTP_PORT: number;
+  SMTP_USER: string;
+  SMTP_PASS: string;
 }
 
 const defaultConfig: AppConfig = {
@@ -20,7 +24,11 @@ const defaultConfig: AppConfig = {
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   PORT: parseInt(process.env.PORT || "3000"),
   HOST: process.env.HOST || "0.0.0.0",
-  APP_URL: process.env.APP_URL || ""
+  APP_URL: process.env.APP_URL || "",
+  SMTP_HOST: process.env.SMTP_HOST || "",
+  SMTP_PORT: parseInt(process.env.SMTP_PORT || "587"),
+  SMTP_USER: process.env.SMTP_USER || "",
+  SMTP_PASS: process.env.SMTP_PASS || "",
 };
 
 let config: AppConfig = { ...defaultConfig };

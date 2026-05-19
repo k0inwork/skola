@@ -3,6 +3,7 @@ import { eq, and, or, desc, sql, ne } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { messages, users, students, lessons } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
+import { sendNewMessageEmail } from "../lib/mail.js";
 
 const router = Router();
 
@@ -142,6 +143,21 @@ router.post("/", async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.emit("new_message", { message: msg, recipientId });
+    }
+
+    // Send email notification to the recipient if they are a student (client)
+    try {
+      const [recipientUser] = await db.select().from(users).where(eq(users.id, recipientId)).limit(1);
+      if (recipientUser?.role === "client" && recipientUser.email) {
+        const [senderUser] = await db.select().from(users).where(eq(users.id, req.userId)).limit(1);
+        let senderName = senderUser?.email || "Instructors";
+        const [senderStudent] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+        if (senderStudent) senderName = `${senderStudent.firstName} ${senderStudent.lastName}`;
+
+        await sendNewMessageEmail(recipientUser.email, senderName, content);
+      }
+    } catch (mailErr) {
+      console.error("Email notification error:", mailErr);
     }
 
     res.status(201).json(msg);
