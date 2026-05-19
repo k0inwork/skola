@@ -7,6 +7,9 @@ mkdir -p "$LOGDIR"
 
 cd "$SKOLA_DIR"
 
+# Load env vars
+set -a; source .env; set +a
+
 BEFORE=$(git rev-parse HEAD)
 git pull >> "$LOGDIR/pull.log" 2>&1
 AFTER=$(git rev-parse HEAD)
@@ -23,6 +26,10 @@ echo "$(date) — deploy started for $AFTER" > "$LOG"
 # Build
 echo "$(date) — building" >> "$LOG"
 npm run build >> "$LOG" 2>&1
+
+# Push DB schema changes
+echo "$(date) — pushing schema" >> "$LOG"
+npx drizzle-kit push 2>&1 >> "$LOG" || true
 
 # Restart
 echo "$(date) — restarting" >> "$LOG"

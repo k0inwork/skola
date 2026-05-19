@@ -33,6 +33,7 @@ interface BookedLesson {
 }
 
 interface Slot {
+  id: string;
   time: string;
   endTime: string;
   date: string;
@@ -47,7 +48,7 @@ export function StudentCalendar() {
   const [selectedInstructor, setSelectedInstructor] = useState("");
 
   const [workingDays, setWorkingDays] = useState<WorkingDay[]>([]);
-  const [bookedLessons, setBookedLessons] = useState<BookedLesson[]>([]);
+  const [dbSlots, setDbSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -98,7 +99,15 @@ export function StudentCalendar() {
       if (res.ok) {
         const data = await res.json();
         setWorkingDays(data.workingDays);
-        setBookedLessons(data.bookedLessons);
+        setDbSlots(data.slots.map((s: any) => ({
+          id: s.id,
+          time: s.startTime,
+          endTime: s.endTime,
+          date: s.date,
+          isAvailable: !s.isBooked,
+          isMine: !!s.lesson?.isMine,
+          lesson: s.lesson,
+        })));
       }
     } catch (err) {
       console.error(err);
@@ -109,51 +118,9 @@ export function StudentCalendar() {
 
   const getDaySlots = (date: Date): Slot[] => {
     const dateStr = format(date, "yyyy-MM-dd");
-    const workingDay = workingDays.find(d => d.date === dateStr);
-
-    // Explicitly set as off -> only show existing booked lessons, no bookable slots
-    if (workingDay && !workingDay.isWorking) {
-      const dayLessons = bookedLessons.filter(l => l.date === dateStr);
-      return dayLessons.map(l => ({
-        date: dateStr,
-        time: l.startTime,
-        endTime: l.endTime,
-        isAvailable: false,
-        isMine: !!l.isMine,
-        lesson: l,
-      }));
-    }
-
-    const slots: Slot[] = [];
-    const baseDate = startOfDay(date);
-
-    // Use configured times if working day is set, otherwise defaults
-    const startH = workingDay ? Number(workingDay.startTime.split(":")[0]) : 9;
-    const startM = workingDay ? Number(workingDay.startTime.split(":")[1]) : 0;
-    const slotDuration = workingDay ? workingDay.slotDurationMin : 90;
-
-    let current = addMinutes(baseDate, startH * 60 + startM);
-
-    for (let i = 0; i < 6; i++) {
-      const timeStr = format(current, "HH:mm");
-      const nextTime = addMinutes(current, slotDuration);
-      const endTimeStr = format(nextTime, "HH:mm");
-
-      const lesson = bookedLessons.find(l => l.date === dateStr && l.startTime < endTimeStr && l.endTime > timeStr);
-      const isAvailable = !lesson;
-
-      slots.push({
-        date: dateStr,
-        time: timeStr,
-        endTime: endTimeStr,
-        isAvailable: isAvailable,
-        isMine: !!lesson?.isMine,
-        lesson
-      });
-
-      current = nextTime;
-    }
-    return slots;
+    return dbSlots
+      .filter(s => s.date === dateStr)
+      .sort((a, b) => a.time.localeCompare(b.time));
   };
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -189,10 +156,7 @@ export function StudentCalendar() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          instructorId: selectedInstructor,
-          date: bookingSlot.date,
-          startTime: bookingSlot.time,
-          endTime: bookingSlot.endTime,
+          slotId: bookingSlot.id,
         })
       });
       if (res.ok) {

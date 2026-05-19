@@ -1,13 +1,74 @@
 import { Router } from "express";
-import { eq, and, gte, lte, inArray, desc, sql } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, desc, isNull, ne } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { instructorWorkingDays, lessons, users, students, enrollments } from "../db/schema.js";
+import { instructorWorkingDays, lessons, users, students, enrollments, slots } from "../db/schema.js";
 import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
+import { sendNewMessageEmail } from "../lib/mail.js";
 
 const router = Router();
 
 router.use(requireAuth);
+
+// --- Slot generation helper ---
+
+async function generateSlotsForDay(instructorId: string, date: string) {
+  // Get working day config
+  const [workingDay] = await db.select().from(instructorWorkingDays).where(and(
+    eq(instructorWorkingDays.instructorId, instructorId),
+    eq(instructorWorkingDays.date, date),
+    eq(instructorWorkingDays.isWorking, true)
+  )).limit(1);
+
+  if (!workingDay || !workingDay.startTime || !workingDay.endTime) {
+    // Not a working day — delete all unbooked slots for this day
+    await db.delete(slots).where(and(
+      eq(slots.instructorId, instructorId),
+      eq(slots.date, date),
+      isNull(slots.lessonId),
+      eq(slots.isBooked, false)
+    ));
+    return;
+  }
+
+  const slotDuration = workingDay.slotDurationMin || 60;
+  const [startH, startM] = workingDay.startTime.split(":").map(Number);
+  const [endH, endM] = workingDay.endTime.split(":").map(Number);
+  const workStartMin = startH * 60 + startM;
+  const workEndMin = endH * 60 + endM;
+
+  // Delete existing unbooked slots for this day
+  await db.delete(slots).where(and(
+    eq(slots.instructorId, instructorId),
+    eq(slots.date, date),
+    isNull(slots.lessonId),
+    eq(slots.isBooked, false)
+  ));
+
+  // Generate new slots
+  const values = [];
+  for (let mins = workStartMin; mins + slotDuration <= workEndMin; mins += slotDuration) {
+    const sH = String(Math.floor(mins / 60)).padStart(2, "0");
+    const sM = String(mins % 60).padStart(2, "0");
+    const eMin = mins + slotDuration;
+    const eH = String(Math.floor(eMin / 60)).padStart(2, "0");
+    const eM = String(eMin % 60).padStart(2, "0");
+
+    values.push({
+      instructorId,
+      date,
+      startTime: `${sH}:${sM}`,
+      endTime: `${eH}:${eM}`,
+      isBooked: false,
+    });
+  }
+
+  if (values.length > 0) {
+    await db.insert(slots).values(values);
+  }
+}
+
+// --- Routes ---
 
 // Get working days for a month (by start and end dates)
 router.get("/working-days", async (req, res) => {
@@ -33,12 +94,11 @@ router.get("/working-days", async (req, res) => {
   }
 });
 
-// Upsert working day
+// Upsert working day — regenerates slots for that day
 router.post("/working-days", async (req, res) => {
   try {
     const { instructorId, date, isWorking, startTime, endTime, slotDurationMin } = req.body;
-    
-    // basic check
+
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });
       return;
@@ -59,6 +119,9 @@ router.post("/working-days", async (req, res) => {
       });
     }
 
+    // Regenerate slots for this day
+    await generateSlotsForDay(instructorId, date);
+
     const io = req.app.get("io");
     if (io) {
       io.emit("calendar_update", { instructorId, date });
@@ -71,12 +134,12 @@ router.post("/working-days", async (req, res) => {
   }
 });
 
-// Get slots for a date (or range)
+// Get slots for a date range — returns generated slots with booking info
 router.get("/slots", async (req, res) => {
   try {
     const { startDate, endDate, instructorId } = req.query as Record<string, string>;
-    
-    // fetch working days in range (include non-working days so frontend can show "Off" state)
+
+    // Get working days in range
     const workingDays = await db.select()
       .from(instructorWorkingDays)
       .where(and(
@@ -85,69 +148,107 @@ router.get("/slots", async (req, res) => {
         lte(instructorWorkingDays.date, endDate)
       ));
 
-    const userStudentId = req.userRole === "client" 
-      ? (await db.select().from(students).where(eq(students.userId, req.userId)))[0]?.id 
-      : null;
-
-    const bookedLessonsRaw = await db.select({
-      id: lessons.id,
-      date: lessons.date,
-      startTime: lessons.startTime,
-      endTime: lessons.endTime,
-      studentId: lessons.studentId,
+    // Get slots with optional lesson info
+    const slotRows = await db.select({
+      id: slots.id,
+      date: slots.date,
+      startTime: slots.startTime,
+      endTime: slots.endTime,
+      isBooked: slots.isBooked,
+      lessonId: slots.lessonId,
+      // lesson fields (via join)
+      lessonStudentId: lessons.studentId,
+      lessonStatus: lessons.status,
+      lessonPaid: lessons.paid,
+      lessonAmount: lessons.amount,
+      lessonNotes: lessons.notes,
+      lessonLocation: lessons.location,
+      lessonProposedDate: lessons.proposedDate,
+      lessonProposedStartTime: lessons.proposedStartTime,
+      lessonProposedEndTime: lessons.proposedEndTime,
+      lessonCreatedAt: lessons.createdAt,
+      // student fields
       studentFirstName: students.firstName,
       studentLastName: students.lastName,
       studentEmail: students.email,
       studentPhone: students.phone,
-      paid: lessons.paid,
-      amount: lessons.amount,
-      notes: lessons.notes,
-      location: lessons.location,
-      status: lessons.status,
-      proposedDate: lessons.proposedDate,
-      proposedStartTime: lessons.proposedStartTime,
-      proposedEndTime: lessons.proposedEndTime,
-      createdAt: lessons.createdAt,
     })
-    .from(lessons)
-    .leftJoin(students, eq(lessons.studentId, students.id))
-    .where(and(
-      eq(lessons.instructorId, instructorId),
-      gte(lessons.date, startDate),
-      lte(lessons.date, endDate),
-      inArray(lessons.status, ["scheduled", "rescheduled", "reschedule_pending"])
-    ));
+      .from(slots)
+      .leftJoin(lessons, eq(slots.lessonId, lessons.id))
+      .leftJoin(students, eq(lessons.studentId, students.id))
+      .where(and(
+        eq(slots.instructorId, instructorId),
+        gte(slots.date, startDate),
+        lte(slots.date, endDate)
+      ))
+      .orderBy(slots.date, slots.startTime);
 
-    const bookedLessons = bookedLessonsRaw.map(lesson => {
-      if (req.userRole === "client" && lesson.studentId !== userStudentId) {
-        return {
-          id: lesson.id,
-          date: lesson.date,
-          startTime: lesson.startTime,
-          endTime: lesson.endTime,
-          studentId: null,
-          studentFirstName: "Student",
-          studentLastName: "",
-          studentEmail: null,
-          studentPhone: null,
-          isMine: false,
-        };
-      }
-      return { ...lesson, isMine: req.userRole === "client" ? lesson.studentId === userStudentId : undefined };
+    const userStudentId = req.userRole === "client"
+      ? (await db.select().from(students).where(eq(students.userId, req.userId)))[0]?.id
+      : null;
+
+    // Shape response
+    const result = slotRows.map(s => {
+      const isMine = req.userRole === "client" ? s.lessonStudentId === userStudentId : undefined;
+      const hideDetails = req.userRole === "client" && s.lessonStudentId && s.lessonStudentId !== userStudentId;
+
+      return {
+        id: s.id,
+        date: s.date,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        isBooked: s.isBooked,
+        lesson: s.lessonId ? {
+          id: s.lessonId,
+          status: s.lessonStatus,
+          paid: s.lessonPaid,
+          amount: s.lessonAmount,
+          notes: hideDetails ? null : s.lessonNotes,
+          location: hideDetails ? null : s.lessonLocation,
+          proposedDate: s.lessonProposedDate,
+          proposedStartTime: s.lessonProposedStartTime,
+          proposedEndTime: s.lessonProposedEndTime,
+          createdAt: s.lessonCreatedAt,
+          studentId: hideDetails ? null : s.lessonStudentId,
+          studentFirstName: hideDetails ? "Student" : s.studentFirstName,
+          studentLastName: hideDetails ? "" : s.studentLastName,
+          studentEmail: hideDetails ? null : s.studentEmail,
+          studentPhone: hideDetails ? null : s.studentPhone,
+          isMine,
+        } : null,
+      };
     });
 
-    res.json({ workingDays, bookedLessons });
+    res.json({ workingDays, slots: result });
   } catch (err) {
     console.error("Get slots error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Book a slot
+// Book a slot by slotId
 router.post("/book", async (req, res) => {
   try {
-    let { enrollmentId, studentId, instructorId, date, startTime, endTime, durationMin } = req.body;
-    
+    let { slotId, enrollmentId, studentId, instructorId, durationMin } = req.body;
+
+    if (!slotId) {
+      res.status(400).json({ error: "slotId is required" });
+      return;
+    }
+
+    // Fetch the slot
+    const [slot] = await db.select().from(slots).where(eq(slots.id, slotId)).limit(1);
+    if (!slot) {
+      res.status(404).json({ error: "Slot not found" });
+      return;
+    }
+    if (slot.isBooked) {
+      res.status(409).json({ error: "Slot is already booked." });
+      return;
+    }
+
+    instructorId = slot.instructorId;
+
     if (req.userRole === "client") {
       const [student] = await db.select().from(students).where(eq(students.userId, req.userId));
       if (!student) {
@@ -156,7 +257,6 @@ router.post("/book", async (req, res) => {
       }
       studentId = student.id;
     } else if (!studentId) {
-      // For demo purposes for admins/instructors
       let [firstStudent] = await db.select().from(students).limit(1);
       if (!firstStudent) {
         const [inserted] = await db.insert(students).values({
@@ -168,60 +268,46 @@ router.post("/book", async (req, res) => {
       }
       studentId = firstStudent.id;
     }
-    
+
     if (!enrollmentId) {
-      // Find or create a default enrollment for the student
       const [existingEnrollment] = await db.select().from(enrollments).where(eq(enrollments.studentId, studentId)).limit(1);
-      
       if (existingEnrollment) {
         enrollmentId = existingEnrollment.id;
       } else {
         try {
-            const [newEnrollment] = await db.insert(enrollments).values({
-                studentId,
-                courseTypeId: "default-course-type",
-                startDate: date, // start today
-                status: "active"
-            }).returning();
-            enrollmentId = newEnrollment.id;
+          const [newEnrollment] = await db.insert(enrollments).values({
+            studentId,
+            courseTypeId: "default-course-type",
+            startDate: slot.date,
+            status: "active"
+          }).returning();
+          enrollmentId = newEnrollment.id;
         } catch (e) {
-            console.error("Failed to create enrollment:", e);
-            throw e;
+          console.error("Failed to create enrollment:", e);
+          throw e;
         }
       }
-    }
-
-    // Check for overlap
-    const existing = await db.select().from(lessons).where(and(
-      eq(lessons.instructorId, instructorId),
-      eq(lessons.date, date),
-      inArray(lessons.status, ["scheduled", "rescheduled"])
-    ));
-    
-    // Check overlap
-    const overlap = existing.some(l => (
-      l.startTime < endTime && l.endTime > startTime
-    ));
-
-    if (overlap) {
-      res.status(409).json({ error: "Slot is already booked." });
-      return;
     }
 
     const [lesson] = await db.insert(lessons).values({
       enrollmentId,
       studentId,
       instructorId,
-      date,
-      startTime,
-      endTime,
+      date: slot.date,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
       durationMin: durationMin || 90,
       status: "scheduled"
     }).returning();
 
+    // Mark slot as booked
+    await db.update(slots)
+      .set({ isBooked: true, lessonId: lesson.id })
+      .where(eq(slots.id, slotId));
+
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId, date });
+      io.emit("calendar_update", { instructorId, date: slot.date });
     }
 
     res.json(lesson);
@@ -234,7 +320,7 @@ router.post("/book", async (req, res) => {
 router.post("/mark-lesson-paid", async (req, res) => {
   try {
     const { lessonId, studentId } = req.body;
-    
+
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });
       return;
@@ -243,14 +329,14 @@ router.post("/mark-lesson-paid", async (req, res) => {
     await db.update(lessons)
       .set({ paid: true })
       .where(eq(lessons.id, lessonId));
-      
+
     await db.update(students)
       .set({ status: "active" })
       .where(eq(students.id, studentId));
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId: "all", lessonId }); // Simplified for broad update
+      io.emit("calendar_update", { instructorId: "all", lessonId });
     }
 
     res.json({ success: true });
@@ -297,7 +383,6 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
       return;
     }
 
-    // Permission check
     if (req.userRole === "client") {
       const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
       if (!student || lesson.studentId !== student.id) {
@@ -310,7 +395,11 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
       .set({ status: "canceled" })
       .where(eq(lessons.id, lessonId));
 
-    // Determine who cancelled and who to notify
+    // Free up the slot
+    await db.update(slots)
+      .set({ isBooked: false, lessonId: null })
+      .where(eq(slots.lessonId, lessonId));
+
     const { messages: msgs } = await import("../db/schema.js");
     const [student] = lesson.studentId
       ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
@@ -321,11 +410,9 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
     let cancelledBy: string;
 
     if (req.userRole === "client") {
-      // Student cancelled → message goes to instructor
       recipientId = lesson.instructorId;
       cancelledBy = student ? `${student.firstName} ${student.lastName}` : "Student";
     } else {
-      // Instructor/admin cancelled → message goes to student
       recipientId = student?.userId!;
       cancelledBy = "Instructor";
     }
@@ -348,6 +435,19 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
       io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
     }
 
+    try {
+      if (req.userRole !== "client") {
+        if (student?.userId) {
+          const [studentUser] = await db.select().from(users).where(eq(users.id, student.userId)).limit(1);
+          if (studentUser?.email) {
+            await sendNewMessageEmail(studentUser.email, "Instructors", content);
+          }
+        }
+      }
+    } catch (mailErr) {
+      console.error("Email notification error:", mailErr);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("Cancel lesson error:", err);
@@ -355,14 +455,14 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
   }
 });
 
-// Reschedule a lesson to a new date/time
+// Reschedule — must target an existing free slot
 router.post("/reschedule-lesson/:lessonId", async (req, res) => {
   try {
     const { lessonId } = req.params;
-    const { date, startTime, endTime } = req.body;
+    const { targetSlotId } = req.body;
 
-    if (!date || !startTime || !endTime) {
-      res.status(400).json({ error: "date, startTime, and endTime are required" });
+    if (!targetSlotId) {
+      res.status(400).json({ error: "targetSlotId is required — pick an existing free slot" });
       return;
     }
 
@@ -372,7 +472,6 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
       return;
     }
 
-    // Permission check
     if (req.userRole === "client") {
       const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
       if (!student || lesson.studentId !== student.id) {
@@ -381,24 +480,25 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
       }
     }
 
-    // Check for overlap at new time
-    const existing = await db.select().from(lessons).where(and(
-      eq(lessons.instructorId, lesson.instructorId),
-      eq(lessons.date, date),
-      inArray(lessons.status, ["scheduled", "rescheduled", "reschedule_pending"])
-    ));
-
-    const overlap = existing.some(l => (
-      l.id !== lessonId && l.startTime < endTime && l.endTime > startTime
-    ));
-
-    if (overlap) {
+    // Validate target slot exists and is free
+    const [targetSlot] = await db.select().from(slots).where(eq(slots.id, targetSlotId)).limit(1);
+    if (!targetSlot) {
+      res.status(404).json({ error: "Target slot not found" });
+      return;
+    }
+    if (targetSlot.isBooked) {
       res.status(409).json({ error: "Target slot is already booked." });
+      return;
+    }
+    if (targetSlot.instructorId !== lesson.instructorId) {
+      res.status(400).json({ error: "Target slot belongs to a different instructor" });
       return;
     }
 
     const oldDate = lesson.date;
     const oldTime = `${lesson.startTime}-${lesson.endTime}`;
+    const newDate = targetSlot.date;
+    const newTime = `${targetSlot.startTime}-${targetSlot.endTime}`;
     const { messages: msgs } = await import("../db/schema.js");
 
     if (req.userRole === "client") {
@@ -406,18 +506,23 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
       await db.update(lessons)
         .set({
           status: "reschedule_pending",
-          proposedDate: date,
-          proposedStartTime: startTime,
-          proposedEndTime: endTime,
+          proposedDate: targetSlot.date,
+          proposedStartTime: targetSlot.startTime,
+          proposedEndTime: targetSlot.endTime,
         })
         .where(eq(lessons.id, lessonId));
+
+      // Temporarily mark the target slot so nobody else grabs it
+      await db.update(slots)
+        .set({ isBooked: true, lessonId: lessonId })
+        .where(eq(slots.id, targetSlotId));
 
       const [student] = lesson.studentId
         ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
         : [null];
 
       const studentName = student ? `${student.firstName} ${student.lastName}` : "Student";
-      const content = `${studentName} requested to reschedule: ${oldDate} (${oldTime}) → ${date} (${startTime}-${endTime})`;
+      const content = `${studentName} requested to reschedule: ${oldDate} (${oldTime}) → ${newDate} (${newTime})`;
 
       const [msg] = await db.insert(msgs).values({
         senderId: req.userId!,
@@ -425,29 +530,41 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
         content,
         type: "reschedule_request",
         lessonId: lessonId,
-        proposedDate: date,
-        proposedStartTime: startTime,
-        proposedEndTime: endTime,
+        proposedDate: targetSlot.date,
+        proposedStartTime: targetSlot.startTime,
+        proposedEndTime: targetSlot.endTime,
       }).returning();
 
       const io = req.app.get("io");
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: lesson.instructorId });
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date });
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date: newDate });
+        if (oldDate !== newDate) io.emit("calendar_update", { instructorId: lesson.instructorId, date: oldDate });
       }
 
       res.json({ success: true, pending: true });
     } else {
       // Instructor/admin reschedules instantly
+      // Free old slot
+      await db.update(slots)
+        .set({ isBooked: false, lessonId: null })
+        .where(and(eq(slots.lessonId, lessonId), eq(slots.isBooked, true)));
+
+      // Book new slot
+      await db.update(slots)
+        .set({ isBooked: true, lessonId: lessonId })
+        .where(eq(slots.id, targetSlotId));
+
+      // Update lesson
       await db.update(lessons)
-        .set({ date, startTime, endTime, status: "rescheduled" })
+        .set({ date: newDate, startTime: targetSlot.startTime, endTime: targetSlot.endTime, status: "rescheduled" })
         .where(eq(lessons.id, lessonId));
 
       const [student] = lesson.studentId
         ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
         : [null];
 
-      const content = `Lesson rescheduled by Instructor: ${oldDate} (${oldTime}) → ${date} (${startTime}-${endTime})`;
+      const content = `Lesson rescheduled by Instructor: ${oldDate} (${oldTime}) → ${newDate} (${newTime})`;
 
       const [msg] = await db.insert(msgs).values({
         senderId: req.userId!,
@@ -460,7 +577,19 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
       const io = req.app.get("io");
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date });
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date: oldDate });
+        if (oldDate !== newDate) io.emit("calendar_update", { instructorId: lesson.instructorId, date: newDate });
+      }
+
+      try {
+        if (student?.userId) {
+          const [studentUser] = await db.select().from(users).where(eq(users.id, student.userId)).limit(1);
+          if (studentUser?.email) {
+            await sendNewMessageEmail(studentUser.email, "Instructors", content);
+          }
+        }
+      } catch (mailErr) {
+        console.error("Email notification error:", mailErr);
       }
 
       res.json({ success: true });
@@ -475,7 +604,7 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
 router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
   try {
     const { lessonId } = req.params;
-    const { action } = req.body; // "approve" or "decline"
+    const { action } = req.body;
 
     if (!action || !["approve", "decline"].includes(action)) {
       res.status(400).json({ error: "action must be 'approve' or 'decline'" });
@@ -507,18 +636,29 @@ router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
     const newSlot = `${lesson.proposedDate} (${lesson.proposedStartTime}-${lesson.proposedEndTime})`;
 
     if (action === "approve") {
-      // Check overlap at proposed time
-      const existing = await db.select().from(lessons).where(and(
-        eq(lessons.instructorId, lesson.instructorId),
-        eq(lessons.date, lesson.proposedDate!),
-        inArray(lessons.status, ["scheduled", "rescheduled"])
-      ));
-      const overlap = existing.some(l => l.id !== lessonId && l.startTime < lesson.proposedEndTime! && l.endTime > lesson.proposedStartTime!);
-      if (overlap) {
-        res.status(409).json({ error: "Target slot is already booked." });
+      // Find the slot that was held for this pending reschedule
+      const [heldSlot] = await db.select().from(slots).where(and(
+        eq(slots.lessonId, lessonId),
+        eq(slots.date, lesson.proposedDate!),
+        eq(slots.startTime, lesson.proposedStartTime!)
+      )).limit(1);
+
+      if (!heldSlot) {
+        res.status(409).json({ error: "Target slot no longer available." });
         return;
       }
 
+      // Free old slot
+      await db.update(slots)
+        .set({ isBooked: false, lessonId: null })
+        .where(and(eq(slots.lessonId, lessonId), ne(slots.id, heldSlot.id)));
+
+      // Confirm the held slot
+      await db.update(slots)
+        .set({ isBooked: true, lessonId: lessonId })
+        .where(eq(slots.id, heldSlot.id));
+
+      // Update lesson
       await db.update(lessons)
         .set({
           date: lesson.proposedDate!,
@@ -544,10 +684,22 @@ router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
       const io = req.app.get("io");
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.proposedDate });
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+        if (lesson.date !== lesson.proposedDate) io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.proposedDate });
+      }
+
+      try {
+        if (student?.userId) {
+          const [studentUser] = await db.select().from(users).where(eq(users.id, student.userId)).limit(1);
+          if (studentUser?.email) {
+            await sendNewMessageEmail(studentUser.email, "Instructors", content);
+          }
+        }
+      } catch (mailErr) {
+        console.error("Email notification error:", mailErr);
       }
     } else {
-      // Decline — revert lesson to original scheduled status
+      // Decline — revert lesson and free the held slot
       await db.update(lessons)
         .set({
           status: "scheduled",
@@ -556,6 +708,25 @@ router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
           proposedEndTime: null,
         })
         .where(eq(lessons.id, lessonId));
+
+      // Free the slot that was held
+      await db.update(slots)
+        .set({ isBooked: false, lessonId: null })
+        .where(and(eq(slots.lessonId, lessonId), eq(slots.isBooked, true)));
+
+      // Re-link old slot to lesson
+      const [oldSlotRow] = await db.select().from(slots).where(and(
+        eq(slots.instructorId, lesson.instructorId),
+        eq(slots.date, lesson.date),
+        eq(slots.startTime, lesson.startTime),
+        eq(slots.isBooked, false)
+      )).limit(1);
+
+      if (oldSlotRow) {
+        await db.update(slots)
+          .set({ isBooked: true, lessonId: lessonId })
+          .where(eq(slots.id, oldSlotRow.id));
+      }
 
       const content = `Reschedule request declined. ${oldSlot} → ${newSlot} was not approved.`;
 
@@ -571,6 +742,17 @@ router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
         io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+      }
+
+      try {
+        if (student?.userId) {
+          const [studentUser] = await db.select().from(users).where(eq(users.id, student.userId)).limit(1);
+          if (studentUser?.email) {
+            await sendNewMessageEmail(studentUser.email, "Instructors", content);
+          }
+        }
+      } catch (mailErr) {
+        console.error("Email notification error:", mailErr);
       }
     }
 

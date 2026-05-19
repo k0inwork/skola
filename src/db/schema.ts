@@ -182,3 +182,22 @@ export const notes = pgTable("notes", {
     .notNull()
     .defaultNow(),
 });
+
+export const slots = pgTable("slots", {
+  id: uuid("id")
+    .primaryKey()
+    .defaultRandom(),
+  instructorId: uuid("instructor_id")
+    .notNull()
+    .references(() => users.id),
+  date: text("date").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  isBooked: boolean("is_booked").default(false),
+  lessonId: uuid("lesson_id")
+    .references(() => lessons.id),
+  createdAt: timestamp("created_at")
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});

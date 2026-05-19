@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent } from "react";
-import { format, addDays, startOfWeek, isSameDay, parseISO, isAfter, isBefore, addMinutes, startOfDay, subDays } from "date-fns";
+import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
 import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X } from "lucide-react";
 import clsx from "clsx";
@@ -45,6 +45,7 @@ interface Location {
 }
 
 interface Slot {
+  id: string;
   time: string;
   endTime: string;
   date: string;
@@ -59,7 +60,7 @@ export function InstructorCalendar() {
   const [isMobileDayView, setIsMobileDayView] = useState(false);
 
   const [workingDays, setWorkingDays] = useState<WorkingDay[]>([]);
-  const [bookedLessons, setBookedLessons] = useState<BookedLesson[]>([]);
+  const [dbSlots, setDbSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
 
@@ -82,7 +83,7 @@ export function InstructorCalendar() {
   // Reschedule state
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [rescheduleLesson, setRescheduleLesson] = useState<BookedLesson | null>(null);
-  const [rescheduleForm, setRescheduleForm] = useState({ date: "", startTime: "", endTime: "" });
+  const [selectedTargetSlotId, setSelectedTargetSlotId] = useState<string | null>(null);
 
   // Cancel state
   const [isCancelOpen, setIsCancelOpen] = useState(false);
@@ -151,7 +152,14 @@ export function InstructorCalendar() {
       if (res.ok) {
         const data = await res.json();
         setWorkingDays(data.workingDays);
-        setBookedLessons(data.bookedLessons);
+        setDbSlots(data.slots.map((s: any) => ({
+          id: s.id,
+          time: s.startTime,
+          endTime: s.endTime,
+          date: s.date,
+          isAvailable: !s.isBooked,
+          lesson: s.lesson,
+        })));
         // Mark calendar as visited now
         const now = new Date().toISOString();
         localStorage.setItem("calendarLastVisited", now);
@@ -171,65 +179,9 @@ export function InstructorCalendar() {
 
   const getDaySlots = (date: Date): Slot[] => {
     const dateStr = format(date, "yyyy-MM-dd");
-    const workingDay = workingDays.find(d => d.date === dateStr);
-
-    // Explicitly set as off → only show existing booked lessons, no empty slots
-    if (workingDay && !workingDay.isWorking) {
-      const dayLessons = bookedLessons.filter(l => l.date === dateStr);
-      return dayLessons.map(l => ({
-        date: dateStr,
-        time: l.startTime,
-        endTime: l.endTime,
-        isAvailable: false,
-        lesson: l,
-      }));
-    }
-
-    const slots: Slot[] = [];
-    const baseDate = startOfDay(date);
-
-    // Use configured times if working day is set, otherwise defaults
-    const startTimeStr = workingDay?.startTime || "09:00";
-    const endTimeStr = workingDay?.endTime || "18:00";
-    const duration = workingDay?.slotDurationMin || 90;
-
-    const [startH, startM] = startTimeStr.split(":").map(Number);
-    const [endH, endM] = endTimeStr.split(":").map(Number);
-
-    let current = addMinutes(baseDate, startH * 60 + startM);
-    const end = addMinutes(baseDate, endH * 60 + endM);
-
-    while (isBefore(current, end) || current.getTime() === end.getTime()) {
-      const timeStr = format(current, "HH:mm");
-      const nextTime = addMinutes(current, duration);
-      const endSlotTime = format(nextTime, "HH:mm");
-
-      if (isAfter(nextTime, end)) break;
-
-      const lesson = bookedLessons.find(l => l.date === dateStr && l.startTime < endSlotTime && l.endTime > timeStr);
-
-      slots.push({ date: dateStr, time: timeStr, endTime: endSlotTime, isAvailable: !lesson, lesson });
-      current = nextTime;
-    }
-
-    // Append any booked lessons that didn't land on a generated slot
-    const slotLessons = slots.filter(s => s.lesson).map(s => s.lesson!.id);
-    bookedLessons
-      .filter(l => l.date === dateStr && !slotLessons.includes(l.id))
-      .forEach(l => {
-        slots.push({
-          date: dateStr,
-          time: l.startTime,
-          endTime: l.endTime,
-          isAvailable: false,
-          lesson: l,
-        });
-      });
-
-    // Sort by time
-    slots.sort((a, b) => a.time.localeCompare(b.time));
-
-    return slots;
+    return dbSlots
+      .filter(s => s.date === dateStr)
+      .sort((a, b) => a.time.localeCompare(b.time));
   };
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -290,14 +242,14 @@ export function InstructorCalendar() {
   };
 
   const handleReschedule = async () => {
-    if (!rescheduleLesson) return;
+    if (!rescheduleLesson || !selectedTargetSlotId) return;
     try {
       const res = await fetch(`/api/calendar/reschedule-lesson/${rescheduleLesson.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(rescheduleForm)
+        body: JSON.stringify({ targetSlotId: selectedTargetSlotId })
       });
-      if (res.ok) { setIsRescheduleOpen(false); setRescheduleLesson(null); setSelectedSlot(null); fetchCalendarData(); }
+      if (res.ok) { setIsRescheduleOpen(false); setRescheduleLesson(null); setSelectedSlot(null); setSelectedTargetSlotId(null); fetchCalendarData(); }
       else { const data = await res.json(); alert(data.error || "Failed to reschedule"); }
     } catch (err) { console.error(err); alert("Error rescheduling lesson"); }
   };
@@ -320,7 +272,7 @@ export function InstructorCalendar() {
       const res = await fetch(`/api/calendar/reschedule-lesson/${draggedLesson.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ date: targetSlot.date, startTime: targetSlot.time, endTime: targetSlot.endTime })
+        body: JSON.stringify({ targetSlotId: targetSlot.id })
       });
       if (res.ok) { fetchCalendarData(); } else { const data = await res.json(); alert(data.error || "Failed to reschedule"); }
     } catch (err) { console.error(err); alert("Error rescheduling"); }
@@ -678,7 +630,7 @@ export function InstructorCalendar() {
                 <button
                   onClick={() => {
                     setRescheduleLesson(selectedSlot.lesson!);
-                    setRescheduleForm({ date: selectedSlot.lesson!.date, startTime: selectedSlot.time, endTime: selectedSlot.endTime });
+                    setSelectedTargetSlotId(null);
                     setIsRescheduleOpen(true);
                   }}
                   className="w-full bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-100 min-h-[44px]"
@@ -774,7 +726,7 @@ export function InstructorCalendar() {
               <button
                 onClick={() => {
                   setRescheduleLesson(selectedSlot.lesson!);
-                  setRescheduleForm({ date: selectedSlot.lesson!.date, startTime: selectedSlot.time, endTime: selectedSlot.endTime });
+                  setSelectedTargetSlotId(null);
                   setIsRescheduleOpen(true);
                 }}
                 className="w-full mt-2 bg-blue-50 text-blue-600 px-4 py-2 rounded hover:bg-blue-100 transition text-sm font-medium border border-blue-100"
@@ -801,33 +753,67 @@ export function InstructorCalendar() {
         )
       )}
 
-      {/* Reschedule modal */}
+      {/* Reschedule modal — slot picker */}
       {isRescheduleOpen && rescheduleLesson && (
         <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50">
           <div className="bg-white rounded-t-2xl md:rounded-xl shadow-lg w-full md:max-w-md md:p-6 p-4 pb-safe max-h-[90vh] overflow-auto">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Reschedule Lesson</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Reschedule Lesson</h3>
             <p className="text-sm text-gray-500 mb-4">
-              Current: {rescheduleLesson.date} {rescheduleLesson.startTime}-{rescheduleLesson.endTime}
+              Current: {rescheduleLesson.date} {rescheduleLesson.startTime}&ndash;{rescheduleLesson.endTime}
             </p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Date</label>
-                <input type="date" value={rescheduleForm.date} onChange={(e) => setRescheduleForm({ ...rescheduleForm, date: e.target.value })} className="w-full p-2.5 border rounded-lg text-sm min-h-[44px]" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Start</label>
-                  <input type="time" value={rescheduleForm.startTime} onChange={(e) => setRescheduleForm({ ...rescheduleForm, startTime: e.target.value })} className="w-full p-2.5 border rounded-lg text-sm min-h-[44px]" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
-                  <input type="time" value={rescheduleForm.endTime} onChange={(e) => setRescheduleForm({ ...rescheduleForm, endTime: e.target.value })} className="w-full p-2.5 border rounded-lg text-sm min-h-[44px]" />
-                </div>
-              </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Pick a new slot:</label>
+              {(() => {
+                const freeSlots = dbSlots
+                  .filter(s => s.isAvailable)
+                  .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+
+                if (freeSlots.length === 0) {
+                  return <p className="text-sm text-gray-400 py-4 text-center">No available slots this week. Navigate to a different week first.</p>;
+                }
+
+                const grouped: Record<string, Slot[]> = {};
+                for (const s of freeSlots) {
+                  if (!grouped[s.date]) grouped[s.date] = [];
+                  grouped[s.date].push(s);
+                }
+
+                return Object.entries(grouped).map(([date, dateSlots]) => (
+                  <div key={date} className="mb-3">
+                    <div className="text-xs font-semibold text-gray-500 mb-1.5">{date}</div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {dateSlots.map(s => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setSelectedTargetSlotId(s.id)}
+                          className={clsx(
+                            "p-2 text-xs rounded-lg border text-center transition min-h-[44px]",
+                            selectedTargetSlotId === s.id
+                              ? "bg-blue-600 text-white border-blue-600 font-bold"
+                              : "bg-white border-gray-200 hover:border-blue-300 text-gray-700"
+                          )}
+                        >
+                          {s.time}&ndash;{s.endTime}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => { setIsRescheduleOpen(false); setRescheduleLesson(null); }} className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 min-h-[44px]">Cancel</button>
-              <button onClick={handleReschedule} className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition min-h-[44px]">Reschedule</button>
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => { setIsRescheduleOpen(false); setRescheduleLesson(null); setSelectedTargetSlotId(null); }} className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 min-h-[44px]">Cancel</button>
+              <button
+                onClick={handleReschedule}
+                disabled={!selectedTargetSlotId}
+                className={clsx(
+                  "flex-1 px-4 py-3 rounded-lg text-sm font-medium transition min-h-[44px]",
+                  selectedTargetSlotId ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                )}
+              >
+                Reschedule
+              </button>
             </div>
           </div>
         </div>
