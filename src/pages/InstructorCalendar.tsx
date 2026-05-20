@@ -609,16 +609,16 @@ export function InstructorCalendar() {
                         className="absolute left-1 right-1 bg-emerald-50/80 border border-emerald-200 rounded-lg z-10"
                         style={{ top: blockTop, height: blockHeight }}
                       >
-                        {/* Drag handle top */}
+                        {/* Drag handle top — absolute, above everything */}
                         <div
-                          className="h-5 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-t-lg"
+                          className="absolute top-0 left-0 right-0 h-6 z-30 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-t-lg"
                           onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "top", wDay)}
                         >
                           <div className="w-8 h-1.5 bg-emerald-500 rounded-full" />
                         </div>
 
                         {/* Block content: show time label */}
-                        <div className="px-2 py-1 text-center">
+                        <div className="px-2 pt-7 text-center">
                           <span className="text-[10px] font-bold text-emerald-700">
                             {effectiveStart} – {effectiveEnd}
                           </span>
@@ -636,9 +636,8 @@ export function InstructorCalendar() {
                               onDrop={(e) => handleDrop(e, slot)}
                               onDragOver={handleDragOver}
                               onClick={(e) => { e.stopPropagation(); if (slot.lesson && !pending) setSelectedSlot(slot); }}
-                              onMouseDown={(e) => e.stopPropagation()}
                               className={clsx(
-                                "absolute left-1 right-1 rounded cursor-pointer overflow-hidden border transition-colors",
+                                "absolute left-1 right-1 rounded cursor-pointer overflow-hidden border transition-colors z-20",
                                 pending ? "bg-amber-100 border-amber-300" :
                                 slot.isAvailable
                                   ? draggedLesson
@@ -668,9 +667,9 @@ export function InstructorCalendar() {
                           );
                         })}
 
-                        {/* Drag handle bottom */}
+                        {/* Drag handle bottom — absolute, above everything */}
                         <div
-                          className="absolute bottom-0 left-0 right-0 h-5 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-b-lg"
+                          className="absolute bottom-0 left-0 right-0 h-6 z-30 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-b-lg"
                           onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "bottom", wDay)}
                         >
                           <div className="w-8 h-1.5 bg-emerald-500 rounded-full" />
