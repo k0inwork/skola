@@ -849,37 +849,33 @@ router.post("/copy-week", async (req, res) => {
       return;
     }
 
-    // Fetch source week working days (Mon-Sun)
-    const sourceDays = await db.select().from(instructorWorkingDays).where(and(
-      eq(instructorWorkingDays.instructorId, instructorId),
-      gte(instructorWorkingDays.date, sourceWeekStart),
-      lte(instructorWorkingDays.date, addDaysToDate(sourceWeekStart, 6))
-    ));
-
     // Use UTC-safe parsing to compute day offset
     const srcStart = new Date(sourceWeekStart + "T00:00:00Z");
     const tgtStart = new Date(targetWeekStart + "T00:00:00Z");
     const dayOffset = Math.round((tgtStart.getTime() - srcStart.getTime()) / 86400000);
 
     // Clear all existing unbooked slots in the target week first
+    // (keep booked slots that have active lessons)
     await db.delete(slots).where(and(
       eq(slots.instructorId, instructorId),
       gte(slots.date, targetWeekStart),
       lte(slots.date, addDaysToDate(targetWeekStart, 6)),
-      isNull(slots.lessonId),
       eq(slots.isBooked, false)
     ));
 
-    let copied = 0;
+    // Copy working days config (for future manual edits to work)
+    const sourceDays = await db.select().from(instructorWorkingDays).where(and(
+      eq(instructorWorkingDays.instructorId, instructorId),
+      gte(instructorWorkingDays.date, sourceWeekStart),
+      lte(instructorWorkingDays.date, addDaysToDate(sourceWeekStart, 6))
+    ));
+
     for (const day of sourceDays) {
       const newDate = addDaysToDate(day.date, dayOffset);
-
-      // Upsert target day
       const existing = await db.select().from(instructorWorkingDays).where(and(
         eq(instructorWorkingDays.instructorId, instructorId),
         eq(instructorWorkingDays.date, newDate)
       ));
-
       if (existing.length > 0) {
         await db.update(instructorWorkingDays)
           .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: 90 })
@@ -890,12 +886,25 @@ router.post("/copy-week", async (req, res) => {
           startTime: day.startTime, endTime: day.endTime, slotDurationMin: 90,
         });
       }
+    }
 
-      // Regenerate slots for the target day
-      if (day.isWorking) {
-        await generateSlotsForDay(instructorId, newDate);
-      }
+    // Copy actual source slots (preserving manually moved positions), all as free
+    const sourceSlots = await db.select().from(slots).where(and(
+      eq(slots.instructorId, instructorId),
+      gte(slots.date, sourceWeekStart),
+      lte(slots.date, addDaysToDate(sourceWeekStart, 6))
+    ));
 
+    let copied = 0;
+    for (const slot of sourceSlots) {
+      const newDate = addDaysToDate(slot.date, dayOffset);
+      await db.insert(slots).values({
+        instructorId,
+        date: newDate,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        isBooked: false,
+      });
       copied++;
     }
 
