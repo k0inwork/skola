@@ -465,6 +465,7 @@ export function InstructorCalendar() {
   // Slot move drag state — drag whole slot up/down AND across days
   const [movingSlotId, setMovingSlotId] = useState<string | null>(null);
   const [moveDraft, setMoveDraft] = useState<{ startTime: string; endTime: string; slotId: string; date: string } | null>(null);
+  const [highlightedSlotId, setHighlightedSlotId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const moveDraftRef = useRef<{ startTime: string; endTime: string; slotId: string; date: string } | null>(null);
   const moveStartYRef = useRef<number>(0);
@@ -534,6 +535,28 @@ export function InstructorCalendar() {
       const next = { startTime: newStart, endTime: newEnd, slotId: movingSlotId, date: targetDate };
       moveDraftRef.current = next;
       setMoveDraft(next);
+
+      // When dragging a booked slot, find the best-matching free slot to highlight
+      if (moveHasLessonRef.current) {
+        const candidates = dbSlots.filter(s =>
+          s.isAvailable && s.id !== movingSlotId && s.date === targetDate
+        );
+        let bestId: string | null = null;
+        let bestOverlap = 0;
+        for (const s of candidates) {
+          const [cSH, cSM] = s.time.split(":").map(Number);
+          const [cEH, cEM] = s.endTime.split(":").map(Number);
+          const cStart = cSH * 60 + cSM;
+          const cEnd = cEH * 60 + cEM;
+          // Overlap in minutes
+          const overlap = Math.max(0, Math.min(newEndMin, cEnd) - Math.max(newStartMin, cStart));
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            bestId = s.id;
+          }
+        }
+        setHighlightedSlotId(bestId);
+      }
     };
 
     const handleMouseUp = () => {
@@ -547,6 +570,7 @@ export function InstructorCalendar() {
         setMoveDraft(null);
         moveDraftRef.current = null;
         moveStartSlotRef.current = null;
+        setHighlightedSlotId(null);
         return;
       }
 
@@ -559,6 +583,7 @@ export function InstructorCalendar() {
         setMoveDraft(null);
         moveDraftRef.current = null;
         moveStartSlotRef.current = null;
+        setHighlightedSlotId(null);
         return;
       }
 
@@ -574,19 +599,25 @@ export function InstructorCalendar() {
       moveDraftRef.current = null;
       moveStartSlotRef.current = null;
 
+      // Capture highlighted target for booked slot drops
+      const highlightedTargetId = highlightedSlotId;
+      setHighlightedSlotId(null);
+
       // Process the drop async after state is clean
       (async () => {
         if (hasLesson) {
-          // Booked slot: always reschedule lesson to target slot (old slot stays, becomes free)
-          const targetSlot = dbSlots.find(s =>
-            s.date === newDate &&
-            s.time === newStart &&
-            s.endTime === newEnd &&
-            s.isAvailable &&
-            s.id !== slotId
-          );
+          // Booked slot: use highlighted target if available, otherwise exact match
+          const targetSlot = highlightedTargetId
+            ? dbSlots.find(s => s.id === highlightedTargetId)
+            : dbSlots.find(s =>
+                s.date === newDate &&
+                s.time === newStart &&
+                s.endTime === newEnd &&
+                s.isAvailable &&
+                s.id !== slotId
+              );
 
-          if (targetSlot) {
+          if (targetSlot && targetSlot.id !== slotId) {
             if (!confirm("Reschedule this lesson? Student will be notified.")) return;
             const srcSlot = dbSlots.find(s => s.id === slotId);
             const res = await fetch(`/api/calendar/reschedule-lesson/${srcSlot!.lesson!.id}`, {
@@ -701,6 +732,7 @@ export function InstructorCalendar() {
                       const sHeight = timeToY(eTime) - sTop;
                       const pending = isPendingReschedule(slot.lesson);
                       const canMove = slot.isAvailable || !!slot.lesson; // allow moving booked slots too
+                      const isHighlighted = highlightedSlotId === slot.id;
                       return (
                         <div
                           key={slot.id}
@@ -728,6 +760,7 @@ export function InstructorCalendar() {
                           className={clsx(
                             "absolute left-1.5 right-1.5 rounded border transition-all select-none",
                             isMoving ? "z-20 shadow-lg ring-2 ring-emerald-400 opacity-80" : "z-10",
+                            isHighlighted ? "z-15 ring-2 ring-emerald-500 shadow-md bg-emerald-200 border-emerald-400" :
                             pending ? "bg-amber-100 border-amber-300" :
                             slot.isAvailable
                               ? draggedLesson
