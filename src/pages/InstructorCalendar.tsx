@@ -471,6 +471,7 @@ export function InstructorCalendar() {
 
   const moveHasLessonRef = useRef(false);
   const moveSlotDateRef = useRef<string>("");
+  const moveJustFinishedRef = useRef(false);
 
   const handleSlotMoveDown = useCallback((e: React.MouseEvent, slot: Slot) => {
     e.preventDefault();
@@ -518,6 +519,9 @@ export function InstructorCalendar() {
     const handleMouseUp = async () => {
       const draft = moveDraftRef.current;
       const orig = moveStartSlotRef.current;
+      moveJustFinishedRef.current = true;
+      setTimeout(() => { moveJustFinishedRef.current = false; }, 100);
+
       if (draft && orig && (draft.startTime !== orig.startTime || draft.endTime !== orig.endTime)) {
         if (moveHasLessonRef.current) {
           // Check if there's a free slot at the drop position
@@ -530,14 +534,7 @@ export function InstructorCalendar() {
           );
 
           if (targetSlot) {
-            // Reschedule lesson to the target free slot
-            if (!confirm("This will reschedule the lesson for the student. Continue?")) {
-              setMovingSlotId(null);
-              setMoveDraft(null);
-              moveDraftRef.current = null;
-              moveStartSlotRef.current = null;
-              return;
-            }
+            // Reschedule lesson to the target free slot — no confirm, just do it
             movePatchSentRef.current = true;
             const slot = dbSlots.find(s => s.id === draft.slotId);
             const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
@@ -554,16 +551,10 @@ export function InstructorCalendar() {
               setMoveDraft(null);
               moveDraftRef.current = null;
               moveStartSlotRef.current = null;
+              movePatchSentRef.current = false;
             }
           } else {
-            // No free slot at drop position — just move slot + lesson time in place
-            if (!confirm("This will reschedule the lesson for the student. Continue?")) {
-              setMovingSlotId(null);
-              setMoveDraft(null);
-              moveDraftRef.current = null;
-              moveStartSlotRef.current = null;
-              return;
-            }
+            // No free slot at drop position — move slot + lesson time in place
             movePatchSentRef.current = true;
             const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
               method: "PATCH",
@@ -723,7 +714,7 @@ export function InstructorCalendar() {
                               }
                             }
                           }}
-                          onClick={(e) => { e.stopPropagation(); if (slot.lesson && !pending) setSelectedSlot(slot); }}
+                          onClick={(e) => { e.stopPropagation(); if (moveJustFinishedRef.current) return; if (slot.lesson && !pending) setSelectedSlot(slot); }}
                           className={clsx(
                             "absolute left-1.5 right-1.5 rounded border transition-all select-none",
                             isMoving ? "z-20 shadow-lg ring-2 ring-emerald-400 opacity-80" : "z-10",
