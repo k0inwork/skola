@@ -590,12 +590,6 @@ export function InstructorCalendar() {
               const isWork = wDay?.isWorking;
               const slotList = getDaySlots(d);
 
-              // Working block positioning (background)
-              const effectiveStart = wDay?.startTime || "09:00";
-              const effectiveEnd = wDay?.endTime || "17:00";
-              const blockTop = timeToY(effectiveStart);
-              const blockHeight = timeToY(effectiveEnd) - blockTop;
-
               return (
                 <div key={i} className="flex flex-col">
                   {/* Day header */}
@@ -624,21 +618,6 @@ export function InstructorCalendar() {
                     {hours.map(h => (
                       <div key={h} className="absolute left-0 right-0 border-b border-gray-50" style={{ top: (h - GRID_START_HOUR) * HOUR_HEIGHT }} />
                     ))}
-
-                    {/* Working day block — background */}
-                    {isWork && (
-                      <div
-                        className="absolute left-1 right-1 bg-emerald-50/50 border border-emerald-100 rounded-lg"
-                        style={{ top: blockTop, height: blockHeight }}
-                      >
-                        {/* Block content: show time label */}
-                        <div className="px-2 pt-1 text-center">
-                          <span className="text-[10px] font-bold text-emerald-700">
-                            {effectiveStart} – {effectiveEnd}
-                          </span>
-                        </div>
-                      </div>
-                    )}
 
                     {/* Slot blocks — individually draggable/resizable */}
                     {isWork && slotList.map((slot, idx) => {
