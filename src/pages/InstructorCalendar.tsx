@@ -573,10 +573,13 @@ export function InstructorCalendar() {
             if (res.ok) {
               fetchCalendarData();
             } else {
+              const data = await res.json().catch(() => ({}));
+              alert(data.error || "Failed to move slot");
               setMovingSlotId(null);
               setMoveDraft(null);
               moveDraftRef.current = null;
               moveStartSlotRef.current = null;
+              movePatchSentRef.current = false;
             }
           }
         } else {
@@ -590,10 +593,13 @@ export function InstructorCalendar() {
           if (res.ok) {
             fetchCalendarData();
           } else {
+            const data = await res.json().catch(() => ({}));
+            alert(data.error || "Failed to move slot");
             setMovingSlotId(null);
             setMoveDraft(null);
             moveDraftRef.current = null;
             moveStartSlotRef.current = null;
+            movePatchSentRef.current = false;
           }
         }
       } else {
