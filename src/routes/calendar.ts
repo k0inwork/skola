@@ -863,6 +863,15 @@ router.post("/copy-week", async (req, res) => {
     const tgtStart = new Date(targetWeekStart);
     const diffMs = tgtStart.getTime() - srcStart.getTime();
 
+    // Clear all existing unbooked slots in the target week first
+    await db.delete(slots).where(and(
+      eq(slots.instructorId, instructorId),
+      gte(slots.date, targetWeekStart),
+      lte(slots.date, addDaysToDate(targetWeekStart, 6)),
+      isNull(slots.lessonId),
+      eq(slots.isBooked, false)
+    ));
+
     let copied = 0;
     for (const day of sourceDays) {
       const newDate = formatDate(new Date(new Date(day.date).getTime() + diffMs));
