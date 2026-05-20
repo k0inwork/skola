@@ -958,6 +958,91 @@ router.post("/copy-week", async (req, res) => {
   }
 });
 
+// Move a slot (update start/end time)
+router.patch("/slots/:slotId", async (req, res) => {
+  try {
+    const { slotId } = req.params;
+    const { startTime, endTime } = req.body;
+
+    if (!startTime || !endTime) {
+      res.status(400).json({ error: "startTime and endTime required" });
+      return;
+    }
+
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const [slot] = await db.select().from(slots).where(eq(slots.id, slotId)).limit(1);
+    if (!slot) {
+      res.status(404).json({ error: "Slot not found" });
+      return;
+    }
+
+    // Check for overlap with other slots on the same day
+    const [newSH, newSM] = startTime.split(":").map(Number);
+    const [newEH, newEM] = endTime.split(":").map(Number);
+    const newStartMin = newSH * 60 + newSM;
+    const newEndMin = newEH * 60 + newEM;
+
+    const daySlots = await db.select().from(slots).where(and(
+      eq(slots.instructorId, slot.instructorId),
+      eq(slots.date, slot.date),
+      ne(slots.id, slotId)
+    ));
+
+    for (const s of daySlots) {
+      const [sH, sM] = s.startTime.split(":").map(Number);
+      const [eH, eM] = s.endTime.split(":").map(Number);
+      const sStart = sH * 60 + sM;
+      const sEnd = eH * 60 + eM;
+      if (newStartMin < sEnd && newEndMin > sStart) {
+        res.status(409).json({ error: "Slot overlaps with another slot" });
+        return;
+      }
+    }
+
+    await db.update(slots).set({ startTime, endTime, updatedAt: new Date() }).where(eq(slots.id, slotId));
+
+    // If booked, also update the lesson + Google Calendar
+    if (slot.isBooked && slot.lessonId) {
+      await db.update(lessons)
+        .set({ startTime, endTime })
+        .where(eq(lessons.id, slot.lessonId));
+
+      try {
+        const [lesson] = await db.select().from(lessons).where(eq(lessons.id, slot.lessonId)).limit(1);
+        if (lesson?.googleEventId) {
+          const startISO = `${slot.date}T${startTime}:00`;
+          const endISO = `${slot.date}T${endTime}:00`;
+          const [studentRow] = lesson.studentId
+            ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
+            : [null];
+          const studentName = studentRow ? `${studentRow.firstName} ${studentRow.lastName}` : "Student";
+          await updateCalendarEvent(slot.instructorId, lesson.googleEventId, {
+            summary: `Braukšanas mācība — ${studentName}`,
+            startTime: startISO,
+            endTime: endISO,
+          });
+        }
+      } catch (calErr) {
+        console.error("Google Calendar sync error (move slot):", calErr);
+      }
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId: slot.instructorId, date: slot.date });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Move slot error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Locations CRUD
 router.get("/locations", async (req, res) => {
   try {

@@ -461,29 +461,36 @@ export function InstructorCalendar() {
     return `${String(Math.max(GRID_START_HOUR, Math.min(h, GRID_END_HOUR))).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  // Working block resize drag state
-  const [resizingDay, setResizingDay] = useState<string | null>(null);
+  // Slot resize drag state — each slot individually movable
+  const [resizingSlotId, setResizingSlotId] = useState<string | null>(null);
   const [resizingEdge, setResizingEdge] = useState<"top" | "bottom" | null>(null);
-  const [resizeDraft, setResizeDraft] = useState<{ startTime: string; endTime: string } | null>(null);
+  const [resizeDraft, setResizeDraft] = useState<{ startTime: string; endTime: string; slotId: string } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const resizeDraftRef = useRef<{ startTime: string; endTime: string } | null>(null);
+  const resizeDraftRef = useRef<{ startTime: string; endTime: string; slotId: string } | null>(null);
 
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent, dateStr: string, edge: "top" | "bottom", wDay: WorkingDay) => {
+  const handleSlotResizeDown = useCallback((e: React.MouseEvent, slot: Slot, edge: "top" | "bottom") => {
     e.preventDefault();
     e.stopPropagation();
-    const draft = { startTime: wDay.startTime, endTime: wDay.endTime };
-    setResizingDay(dateStr);
+    const draft = { startTime: slot.time, endTime: slot.endTime, slotId: slot.id };
+    setResizingSlotId(slot.id);
     setResizingEdge(edge);
     setResizeDraft(draft);
     resizeDraftRef.current = draft;
   }, []);
 
   useEffect(() => {
-    if (!resizingDay || !resizingEdge) return;
+    if (!resizingSlotId || !resizingEdge) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!gridRef.current) return;
-      const gridBody = gridRef.current.querySelector(`[data-grid-date="${resizingDay}"]`);
+      // Find the grid column for this slot's date
+      const slotData = resizeDraftRef.current;
+      if (!slotData) return;
+
+      const draftSlot = dbSlots.find(s => s.id === resizingSlotId);
+      if (!draftSlot) return;
+
+      const gridBody = gridRef.current.querySelector(`[data-grid-date="${draftSlot.date}"]`);
       if (!gridBody) return;
       const rect = gridBody.getBoundingClientRect();
       const y = e.clientY - rect.top;
@@ -494,15 +501,22 @@ export function InstructorCalendar() {
 
       let next = prev;
       if (resizingEdge === "top") {
+        // Moving top edge — start time changes, end stays
         const [eH, eM] = prev.endTime.split(":").map(Number);
         const [nH, nM] = time.split(":").map(Number);
-        if (nH * 60 + nM + 90 <= eH * 60 + eM) {
+        const newStartMin = nH * 60 + nM;
+        const endMin = eH * 60 + eM;
+        // Min 15min slot, can't go past end
+        if (newStartMin + 15 <= endMin) {
           next = { ...prev, startTime: time };
         }
       } else {
+        // Moving bottom edge — end time changes, start stays
         const [sH, sM] = prev.startTime.split(":").map(Number);
         const [nH, nM] = time.split(":").map(Number);
-        if (sH * 60 + sM + 90 <= nH * 60 + nM) {
+        const startMin = sH * 60 + sM;
+        const newEndMin = nH * 60 + nM;
+        if (startMin + 15 <= newEndMin) {
           next = { ...prev, endTime: time };
         }
       }
@@ -512,23 +526,17 @@ export function InstructorCalendar() {
 
     const handleMouseUp = async () => {
       const draft = resizeDraftRef.current;
-      if (draft && resizingDay) {
-        const res = await fetch("/api/calendar/working-days", {
-          method: "POST",
+      if (draft && draft.slotId) {
+        const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
+          method: "PATCH",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            instructorId: selectedInstructor,
-            date: resizingDay,
-            isWorking: true,
-            startTime: draft.startTime,
-            endTime: draft.endTime,
-          })
+          body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
         });
         if (res.ok) {
           fetchCalendarData();
         }
       }
-      setResizingDay(null);
+      setResizingSlotId(null);
       setResizingEdge(null);
       setResizeDraft(null);
       resizeDraftRef.current = null;
@@ -540,7 +548,7 @@ export function InstructorCalendar() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [resizingDay, resizingEdge, selectedInstructor, token]);
+  }, [resizingSlotId, resizingEdge, selectedInstructor, token, dbSlots]);
 
   const renderWeekView = () => {
     const hours = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => GRID_START_HOUR + i);
@@ -570,9 +578,9 @@ export function InstructorCalendar() {
               const isWork = wDay?.isWorking;
               const slotList = getDaySlots(d);
 
-              // Working block positioning
-              const effectiveStart = (resizingDay === dateStr && resizeDraft) ? resizeDraft.startTime : (wDay?.startTime || "09:00");
-              const effectiveEnd = (resizingDay === dateStr && resizeDraft) ? resizeDraft.endTime : (wDay?.endTime || "17:00");
+              // Working block positioning (background)
+              const effectiveStart = wDay?.startTime || "09:00";
+              const effectiveEnd = wDay?.endTime || "17:00";
               const blockTop = timeToY(effectiveStart);
               const blockHeight = timeToY(effectiveEnd) - blockTop;
 
@@ -605,79 +613,85 @@ export function InstructorCalendar() {
                       <div key={h} className="absolute left-0 right-0 border-b border-gray-50" style={{ top: (h - GRID_START_HOUR) * HOUR_HEIGHT }} />
                     ))}
 
-                    {/* Working day block */}
+                    {/* Working day block — background */}
                     {isWork && (
                       <div
-                        className="absolute left-1 right-1 bg-emerald-50/80 border border-emerald-200 rounded-lg z-10"
+                        className="absolute left-1 right-1 bg-emerald-50/50 border border-emerald-100 rounded-lg"
                         style={{ top: blockTop, height: blockHeight }}
                       >
-                        {/* Drag handle top — absolute, above everything */}
-                        <div
-                          className="absolute top-0 left-0 right-0 h-6 z-30 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-t-lg"
-                          onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "top", wDay)}
-                        >
-                          <div className="w-8 h-1.5 bg-emerald-500 rounded-full" />
-                        </div>
-
                         {/* Block content: show time label */}
-                        <div className="px-2 pt-7 text-center">
+                        <div className="px-2 pt-1 text-center">
                           <span className="text-[10px] font-bold text-emerald-700">
                             {effectiveStart} – {effectiveEnd}
                           </span>
                         </div>
-
-                        {/* Slot indicators */}
-                        {slotList.map((slot, idx) => {
-                          const slotTop = timeToY(slot.time) - blockTop;
-                          const pending = isPendingReschedule(slot.lesson);
-                          return (
-                            <div
-                              key={idx}
-                              draggable={!!slot.lesson && !pending}
-                              onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
-                              onDrop={(e) => handleDrop(e, slot)}
-                              onDragOver={handleDragOver}
-                              onClick={(e) => { e.stopPropagation(); if (slot.lesson && !pending) setSelectedSlot(slot); }}
-                              className={clsx(
-                                "absolute left-1 right-1 rounded cursor-pointer overflow-hidden border transition-colors z-20",
-                                pending ? "bg-amber-100 border-amber-300" :
-                                slot.isAvailable
-                                  ? draggedLesson
-                                    ? "bg-emerald-100 border-emerald-300 hover:bg-emerald-200"
-                                    : "bg-white/60 border-emerald-100"
-                                  : "bg-blue-100 border-blue-200 hover:bg-blue-200",
-                                slot.lesson && !pending && "hover:shadow-sm"
-                              )}
-                              style={{ top: slotTop, height: SLOT_HEIGHT - 2 }}
-                            >
-                              {slot.lesson && (
-                                <div className="px-1.5 py-0.5 text-[9px] leading-tight">
-                                  <span className="font-semibold text-gray-800 truncate block">
-                                    {slot.lesson.studentFirstName} {slot.lesson.studentLastName}
-                                  </span>
-                                  <span className="text-gray-500">{slot.time}–{slot.endTime}</span>
-                                  {pending && <span className="ml-1 text-amber-600 font-bold">MOVE</span>}
-                                  {isNewLesson(slot.lesson) && <span className="ml-1 text-blue-600 font-bold">NEW</span>}
-                                </div>
-                              )}
-                              {slot.isAvailable && !slot.lesson && (
-                                <div className="px-1.5 py-0.5 text-[9px] text-emerald-500 font-medium">
-                                  {slot.time}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {/* Drag handle bottom — absolute, above everything */}
-                        <div
-                          className="absolute bottom-0 left-0 right-0 h-6 z-30 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-b-lg"
-                          onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "bottom", wDay)}
-                        >
-                          <div className="w-8 h-1.5 bg-emerald-500 rounded-full" />
-                        </div>
                       </div>
                     )}
+
+                    {/* Slot blocks — individually draggable/resizable */}
+                    {isWork && slotList.map((slot, idx) => {
+                      const isResizing = resizingSlotId === slot.id;
+                      const draft = isResizing ? resizeDraft : null;
+                      const sTime = draft ? draft.startTime : slot.time;
+                      const eTime = draft ? draft.endTime : slot.endTime;
+                      const sTop = timeToY(sTime);
+                      const sHeight = timeToY(eTime) - sTop;
+                      const pending = isPendingReschedule(slot.lesson);
+                      return (
+                        <div
+                          key={idx}
+                          draggable={!!slot.lesson && !pending}
+                          onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
+                          onDrop={(e) => handleDrop(e, slot)}
+                          onDragOver={handleDragOver}
+                          onClick={(e) => { e.stopPropagation(); if (slot.lesson && !pending) setSelectedSlot(slot); }}
+                          className={clsx(
+                            "absolute left-1.5 right-1.5 rounded cursor-pointer overflow-visible border transition-colors z-10 group/slot",
+                            pending ? "bg-amber-100 border-amber-300" :
+                            slot.isAvailable
+                              ? draggedLesson
+                                ? "bg-emerald-100 border-emerald-300 hover:bg-emerald-200"
+                                : "bg-white/80 border-emerald-200"
+                              : "bg-blue-100 border-blue-200 hover:bg-blue-200",
+                            slot.lesson && !pending && "hover:shadow-sm"
+                          )}
+                          style={{ top: sTop, height: sHeight }}
+                        >
+                          {/* Top resize handle */}
+                          <div
+                            className="absolute -top-0 left-0 right-0 h-3 z-30 cursor-ns-resize opacity-0 group-hover/slot:opacity-100 transition-opacity"
+                            onMouseDown={(e) => handleSlotResizeDown(e, slot, "top")}
+                          >
+                            <div className="mx-auto w-6 h-1 bg-emerald-400 rounded-full mt-0.5" />
+                          </div>
+
+                          {/* Slot content */}
+                          {slot.lesson && (
+                            <div className="px-1.5 py-0.5 text-[9px] leading-tight">
+                              <span className="font-semibold text-gray-800 truncate block">
+                                {slot.lesson.studentFirstName} {slot.lesson.studentLastName}
+                              </span>
+                              <span className="text-gray-500">{sTime}–{eTime}</span>
+                              {pending && <span className="ml-1 text-amber-600 font-bold">MOVE</span>}
+                              {isNewLesson(slot.lesson) && <span className="ml-1 text-blue-600 font-bold">NEW</span>}
+                            </div>
+                          )}
+                          {slot.isAvailable && !slot.lesson && (
+                            <div className="px-1.5 py-0.5 text-[9px] text-emerald-500 font-medium">
+                              {sTime}–{eTime}
+                            </div>
+                          )}
+
+                          {/* Bottom resize handle */}
+                          <div
+                            className="absolute -bottom-0 left-0 right-0 h-3 z-30 cursor-ns-resize opacity-0 group-hover/slot:opacity-100 transition-opacity"
+                            onMouseDown={(e) => handleSlotResizeDown(e, slot, "bottom")}
+                          >
+                            <div className="mx-auto w-6 h-1 bg-emerald-400 rounded-full mt-1.5" />
+                          </div>
+                        </div>
+                      );
+                    })}
 
                     {!isWork && (
                       <div className="absolute inset-0 flex items-center justify-center">
