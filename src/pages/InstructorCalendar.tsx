@@ -522,14 +522,21 @@ export function InstructorCalendar() {
           body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
         });
         if (res.ok) {
-          await fetchCalendarData();
+          fetchCalendarData();
+        } else {
+          // Failed — clear draft so slot snaps back
+          setMovingSlotId(null);
+          setMoveDraft(null);
+          moveDraftRef.current = null;
+          moveStartSlotRef.current = null;
         }
+      } else {
+        // No movement — clear immediately
+        setMovingSlotId(null);
+        setMoveDraft(null);
+        moveDraftRef.current = null;
+        moveStartSlotRef.current = null;
       }
-      // Only clear draft after data is refreshed so there's no snap-back
-      setMovingSlotId(null);
-      setMoveDraft(null);
-      moveDraftRef.current = null;
-      moveStartSlotRef.current = null;
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -539,6 +546,18 @@ export function InstructorCalendar() {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [movingSlotId, selectedInstructor, token, dbSlots]);
+
+  // Clear move draft once dbSlots reflects the new position
+  useEffect(() => {
+    if (!movingSlotId || !moveDraftRef.current) return;
+    const updated = dbSlots.find(s => s.id === movingSlotId);
+    if (updated && updated.time === moveDraftRef.current.startTime) {
+      setMovingSlotId(null);
+      setMoveDraft(null);
+      moveDraftRef.current = null;
+      moveStartSlotRef.current = null;
+    }
+  }, [dbSlots, movingSlotId]);
 
   const renderWeekView = () => {
     const hours = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => GRID_START_HOUR + i);
