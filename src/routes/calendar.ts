@@ -934,9 +934,11 @@ router.patch("/slots/:slotId", async (req, res) => {
     const newStartMin = newSH * 60 + newSM;
     const newEndMin = newEH * 60 + newEM;
 
+    // Only check overlap against BOOKED slots (free slots don't conflict)
     const daySlots = await db.select().from(slots).where(and(
       eq(slots.instructorId, slot.instructorId),
       eq(slots.date, targetDate),
+      eq(slots.isBooked, true),
       ne(slots.id, slotId)
     ));
 
@@ -946,7 +948,7 @@ router.patch("/slots/:slotId", async (req, res) => {
       const sStart = sH * 60 + sM;
       const sEnd = eH * 60 + eM;
       if (newStartMin < sEnd && newEndMin > sStart) {
-        res.status(409).json({ error: "Slot overlaps with another slot" });
+        res.status(409).json({ error: "Slot overlaps with a booked lesson" });
         return;
       }
     }

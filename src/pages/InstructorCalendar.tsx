@@ -562,17 +562,21 @@ export function InstructorCalendar() {
         return;
       }
 
-      // Snapshot values before clearing draft
+      // Snapshot values
       const slotId = draft.slotId;
       const newStart = draft.startTime;
       const newEnd = draft.endTime;
       const newDate = draft.date;
 
-      // Clear visual draft immediately so slot doesn't stick to cursor
-      setMovingSlotId(null);
-      setMoveDraft(null);
-      moveDraftRef.current = null;
+      // Stop mouse tracking but keep visual draft (slot stays at drop position during confirm)
       moveStartSlotRef.current = null;
+
+      const clearDraft = () => {
+        setMovingSlotId(null);
+        setMoveDraft(null);
+        moveDraftRef.current = null;
+        moveStartSlotRef.current = null;
+      };
 
       if (moveHasLessonRef.current) {
         // Check if there's a free slot at the exact drop position
@@ -585,7 +589,7 @@ export function InstructorCalendar() {
         );
 
         if (targetSlot) {
-          if (!confirm("Reschedule this lesson? Student will be notified.")) return;
+          if (!confirm("Reschedule this lesson? Student will be notified.")) { clearDraft(); return; }
           const slot = dbSlots.find(s => s.id === slotId);
           const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
             method: "POST",
@@ -593,39 +597,43 @@ export function InstructorCalendar() {
             body: JSON.stringify({ targetSlotId: targetSlot.id })
           });
           if (res.ok) {
+            clearDraft();
             fetchCalendarData();
           } else {
+            clearDraft();
             const data = await res.json();
             alert(data.error || "Reschedule failed");
           }
         } else {
-          if (!confirm("Reschedule this lesson? Student will be notified.")) return;
+          if (!confirm("Reschedule this lesson? Student will be notified.")) { clearDraft(); return; }
           const res = await fetch(`/api/calendar/slots/${slotId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
             body: JSON.stringify({ startTime: newStart, endTime: newEnd, date: newDate })
           });
           if (res.ok) {
+            clearDraft();
             fetchCalendarData();
           } else {
+            clearDraft();
             const data = await res.json().catch(() => ({}));
             alert(data.error || "Failed to move slot");
           }
         }
       } else {
         // Free slot — just PATCH time + date
-        movePatchSentRef.current = true;
         const res = await fetch(`/api/calendar/slots/${slotId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ startTime: newStart, endTime: newEnd, date: newDate })
         });
         if (res.ok) {
+          clearDraft();
           fetchCalendarData();
         } else {
+          clearDraft();
           const data = await res.json().catch(() => ({}));
           alert(data.error || "Failed to move slot");
-          movePatchSentRef.current = false;
         }
       }
     };
@@ -637,20 +645,6 @@ export function InstructorCalendar() {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [movingSlotId, selectedInstructor, token, dbSlots]);
-
-  // Clear move draft once dbSlots reflects the new position (only after PATCH was sent)
-  const movePatchSentRef = useRef(false);
-  useEffect(() => {
-    if (!movingSlotId || !moveDraftRef.current || !movePatchSentRef.current) return;
-    const updated = dbSlots.find(s => s.id === movingSlotId);
-    if (updated && updated.time === moveDraftRef.current.startTime) {
-      setMovingSlotId(null);
-      setMoveDraft(null);
-      moveDraftRef.current = null;
-      moveStartSlotRef.current = null;
-      movePatchSentRef.current = false;
-    }
-  }, [dbSlots, movingSlotId]);
 
   const renderWeekView = () => {
     const hours = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => GRID_START_HOUR + i);
