@@ -453,7 +453,9 @@ export function InstructorCalendar() {
   };
 
   const yToTime = (y: number): string => {
-    const totalMin = Math.round((y / HOUR_HEIGHT) * 15) / 15 * 15 + GRID_START_HOUR * 60; // snap to 15min
+    const rawMin = (y / HOUR_HEIGHT) * 60; // minutes from grid start
+    const snapped = Math.round(rawMin / 15) * 15; // snap to 15 min
+    const totalMin = snapped + GRID_START_HOUR * 60;
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     return `${String(Math.max(GRID_START_HOUR, Math.min(h, GRID_END_HOUR))).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
