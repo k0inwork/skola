@@ -536,7 +536,7 @@ export function InstructorCalendar() {
       setMoveDraft(next);
     };
 
-    const handleMouseUp = async () => {
+    const handleMouseUp = () => {
       const draft = moveDraftRef.current;
       const orig = moveStartSlotRef.current;
       moveJustFinishedRef.current = true;
@@ -562,80 +562,66 @@ export function InstructorCalendar() {
         return;
       }
 
-      // Snapshot values
+      // Snapshot values then clear ALL drag state immediately
       const slotId = draft.slotId;
       const newStart = draft.startTime;
       const newEnd = draft.endTime;
       const newDate = draft.date;
+      const hasLesson = moveHasLessonRef.current;
 
-      // Stop mouse tracking but keep visual draft (slot stays at drop position during confirm)
+      setMovingSlotId(null);
+      setMoveDraft(null);
+      moveDraftRef.current = null;
       moveStartSlotRef.current = null;
 
-      const clearDraft = () => {
-        setMovingSlotId(null);
-        setMoveDraft(null);
-        moveDraftRef.current = null;
-        moveStartSlotRef.current = null;
-      };
+      // Process the drop async after state is clean
+      (async () => {
+        if (hasLesson) {
+          // Booked slot: always reschedule lesson to target slot (old slot stays, becomes free)
+          const targetSlot = dbSlots.find(s =>
+            s.date === newDate &&
+            s.time === newStart &&
+            s.endTime === newEnd &&
+            s.isAvailable &&
+            s.id !== slotId
+          );
 
-      if (moveHasLessonRef.current) {
-        // Check if there's a free slot at the exact drop position
-        const targetSlot = dbSlots.find(s =>
-          s.date === newDate &&
-          s.time === newStart &&
-          s.endTime === newEnd &&
-          s.isAvailable &&
-          s.id !== slotId
-        );
-
-        if (targetSlot) {
-          if (!confirm("Reschedule this lesson? Student will be notified.")) { clearDraft(); return; }
-          const slot = dbSlots.find(s => s.id === slotId);
-          const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ targetSlotId: targetSlot.id })
-          });
-          if (res.ok) {
-            clearDraft();
-            fetchCalendarData();
+          if (targetSlot) {
+            if (!confirm("Reschedule this lesson? Student will be notified.")) return;
+            const srcSlot = dbSlots.find(s => s.id === slotId);
+            const res = await fetch(`/api/calendar/reschedule-lesson/${srcSlot!.lesson!.id}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ targetSlotId: targetSlot.id })
+            });
+            if (res.ok) { fetchCalendarData(); }
+            else { const data = await res.json(); alert(data.error || "Reschedule failed"); }
           } else {
-            clearDraft();
-            const data = await res.json();
-            alert(data.error || "Reschedule failed");
+            // Same day, different time — PATCH the slot time (slot stays in same day)
+            if (dateChanged) {
+              alert("No free slot at that position. Drop on a green (free) slot to reschedule across days.");
+              return;
+            }
+            if (!confirm("Reschedule this lesson? Student will be notified.")) return;
+            const res = await fetch(`/api/calendar/slots/${slotId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ startTime: newStart, endTime: newEnd })
+            });
+            if (res.ok) { fetchCalendarData(); }
+            else { const data = await res.json().catch(() => ({})); alert(data.error || "Failed to move slot"); }
           }
         } else {
-          if (!confirm("Reschedule this lesson? Student will be notified.")) { clearDraft(); return; }
+          // Free slot — just PATCH time + date
           const res = await fetch(`/api/calendar/slots/${slotId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
             body: JSON.stringify({ startTime: newStart, endTime: newEnd, date: newDate })
           });
-          if (res.ok) {
-            clearDraft();
-            fetchCalendarData();
-          } else {
-            clearDraft();
-            const data = await res.json().catch(() => ({}));
-            alert(data.error || "Failed to move slot");
-          }
+          if (res.ok) { fetchCalendarData(); }
+          else { const data = await res.json().catch(() => ({})); alert(data.error || "Failed to move slot"); }
         }
-      } else {
-        // Free slot — just PATCH time + date
-        const res = await fetch(`/api/calendar/slots/${slotId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ startTime: newStart, endTime: newEnd, date: newDate })
-        });
-        if (res.ok) {
-          clearDraft();
-          fetchCalendarData();
-        } else {
-          clearDraft();
-          const data = await res.json().catch(() => ({}));
-          alert(data.error || "Failed to move slot");
-        }
-      }
+      })();
     };
 
     window.addEventListener("mousemove", handleMouseMove);
