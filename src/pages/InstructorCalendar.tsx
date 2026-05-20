@@ -516,6 +516,7 @@ export function InstructorCalendar() {
       const draft = moveDraftRef.current;
       const orig = moveStartSlotRef.current;
       if (draft && orig && (draft.startTime !== orig.startTime || draft.endTime !== orig.endTime)) {
+        movePatchSentRef.current = true;
         const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -547,15 +548,17 @@ export function InstructorCalendar() {
     };
   }, [movingSlotId, selectedInstructor, token, dbSlots]);
 
-  // Clear move draft once dbSlots reflects the new position
+  // Clear move draft once dbSlots reflects the new position (only after PATCH was sent)
+  const movePatchSentRef = useRef(false);
   useEffect(() => {
-    if (!movingSlotId || !moveDraftRef.current) return;
+    if (!movingSlotId || !moveDraftRef.current || !movePatchSentRef.current) return;
     const updated = dbSlots.find(s => s.id === movingSlotId);
     if (updated && updated.time === moveDraftRef.current.startTime) {
       setMovingSlotId(null);
       setMoveDraft(null);
       moveDraftRef.current = null;
       moveStartSlotRef.current = null;
+      movePatchSentRef.current = false;
     }
   }, [dbSlots, movingSlotId]);
 
