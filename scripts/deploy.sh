@@ -37,6 +37,8 @@ kill $(lsof -ti:3000 -c node) 2>/dev/null || true
 sleep 1
 cd "$SKOLA_DIR"
 nohup env NODE_ENV=production node dist/server.cjs > "$LOGDIR/server.log" 2>&1 &
+sleep 1
+systemctl restart caddy 2>/dev/null || true
 
 echo "$(date) — deploy done" >> "$LOG"
 ln -sf "$LOG" "$LOGDIR/latest.log"
