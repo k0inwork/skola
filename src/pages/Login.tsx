@@ -88,9 +88,17 @@ export function Login() {
           {profile ? `Turpināt kā ${profile.name}` : "Turpināt ar Google"}
         </button>
 
-        <p className="text-white/20 text-[11px] text-center mt-4">
-          Droša autorizācija caur Google
-        </p>
+        <div className="flex flex-col items-center gap-1 mt-4">
+          <p className="text-white/20 text-[11px]">Droša autorizācija caur Google</p>
+          {profile && (
+            <button
+              onClick={() => { localStorage.removeItem("skola_profile"); setProfile(null); }}
+              className="text-white/30 text-[11px] hover:text-white/50 transition-colors underline underline-offset-2"
+            >
+              Nav {profile.name}? Ielogoties citā kontā
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
