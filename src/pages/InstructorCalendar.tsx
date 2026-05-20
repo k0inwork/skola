@@ -522,9 +522,10 @@ export function InstructorCalendar() {
           body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
         });
         if (res.ok) {
-          fetchCalendarData();
+          await fetchCalendarData();
         }
       }
+      // Only clear draft after data is refreshed so there's no snap-back
       setMovingSlotId(null);
       setMoveDraft(null);
       moveDraftRef.current = null;
