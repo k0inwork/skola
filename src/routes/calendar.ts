@@ -11,6 +11,18 @@ const router = Router();
 
 router.use(requireAuth);
 
+// --- Helpers ---
+
+function addDaysToDate(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
 // --- Slot generation helper ---
 
 async function generateSlotsForDay(instructorId: string, date: string) {
@@ -32,7 +44,7 @@ async function generateSlotsForDay(instructorId: string, date: string) {
     return;
   }
 
-  const slotDuration = workingDay.slotDurationMin || 60;
+  const slotDuration = 90;
   const [startH, startM] = workingDay.startTime.split(":").map(Number);
   const [endH, endM] = workingDay.endTime.split(":").map(Number);
   const workStartMin = startH * 60 + startM;
@@ -98,7 +110,8 @@ router.get("/working-days", async (req, res) => {
 // Upsert working day — regenerates slots for that day
 router.post("/working-days", async (req, res) => {
   try {
-    const { instructorId, date, isWorking, startTime, endTime, slotDurationMin } = req.body;
+    const { instructorId, date, isWorking, startTime, endTime } = req.body;
+    const slotDurationMin = 90;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });
@@ -870,6 +883,77 @@ router.get("/notifications", async (req, res) => {
     res.json(notifications);
   } catch (err) {
     console.error("Get notifications error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Copy working days from one week to another
+router.post("/copy-week", async (req, res) => {
+  try {
+    const { instructorId, sourceWeekStart, targetWeekStart } = req.body as {
+      instructorId: string;
+      sourceWeekStart: string; // e.g. "2026-05-18"
+      targetWeekStart: string; // e.g. "2026-05-25"
+    };
+
+    if (!instructorId || !sourceWeekStart || !targetWeekStart) {
+      res.status(400).json({ error: "instructorId, sourceWeekStart, targetWeekStart required" });
+      return;
+    }
+
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    // Fetch source week working days (Mon-Sun)
+    const sourceDays = await db.select().from(instructorWorkingDays).where(and(
+      eq(instructorWorkingDays.instructorId, instructorId),
+      gte(instructorWorkingDays.date, sourceWeekStart),
+      lte(instructorWorkingDays.date, addDaysToDate(sourceWeekStart, 6))
+    ));
+
+    const srcStart = new Date(sourceWeekStart);
+    const tgtStart = new Date(targetWeekStart);
+    const diffMs = tgtStart.getTime() - srcStart.getTime();
+
+    let copied = 0;
+    for (const day of sourceDays) {
+      const newDate = formatDate(new Date(new Date(day.date).getTime() + diffMs));
+
+      // Upsert target day
+      const existing = await db.select().from(instructorWorkingDays).where(and(
+        eq(instructorWorkingDays.instructorId, instructorId),
+        eq(instructorWorkingDays.date, newDate)
+      ));
+
+      if (existing.length > 0) {
+        await db.update(instructorWorkingDays)
+          .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: 90 })
+          .where(eq(instructorWorkingDays.id, existing[0].id));
+      } else {
+        await db.insert(instructorWorkingDays).values({
+          instructorId, date: newDate, isWorking: day.isWorking,
+          startTime: day.startTime, endTime: day.endTime, slotDurationMin: 90,
+        });
+      }
+
+      // Regenerate slots for the target day
+      if (day.isWorking) {
+        await generateSlotsForDay(instructorId, newDate);
+      }
+
+      copied++;
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId });
+    }
+
+    res.json({ success: true, copied });
+  } catch (err) {
+    console.error("Copy week error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

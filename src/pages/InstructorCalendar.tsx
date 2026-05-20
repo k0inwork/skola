@@ -1,4 +1,4 @@
-import React, { useState, useEffect, FormEvent } from "react";
+import React, { useState, useEffect, FormEvent, useRef, useCallback } from "react";
 import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
 import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X } from "lucide-react";
@@ -254,6 +254,27 @@ export function InstructorCalendar() {
     } catch (err) { console.error(err); alert("Error rescheduling lesson"); }
   };
 
+  // Copy week handler
+  const handleCopyWeek = async () => {
+    const weekStartStr = format(weekStart, "yyyy-MM-dd");
+    const nextWeekStartStr = format(addDays(weekStart, 7), "yyyy-MM-dd");
+    try {
+      const res = await fetch("/api/calendar/copy-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ instructorId: selectedInstructor, sourceWeekStart: weekStartStr, targetWeekStart: nextWeekStartStr })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Copied ${data.copied} day(s) to next week`);
+        fetchCalendarData();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to copy week");
+      }
+    } catch (err) { console.error(err); alert("Error copying week"); }
+  };
+
   // Drag & drop handlers
   const [draggedLesson, setDraggedLesson] = useState<BookedLesson | null>(null);
 
@@ -420,45 +441,248 @@ export function InstructorCalendar() {
     );
   };
 
-  const renderWeekView = () => (
-    <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-auto">
-      <div className="grid grid-cols-7 min-w-[800px] divide-x divide-gray-100 min-h-full">
-        {weekDays.map((d, i) => {
-          const isToday = isSameDay(d, new Date());
-          const slotList = getDaySlots(d);
-          const dateStr = format(d, "yyyy-MM-dd");
-          const wDay = workingDays.find(wd => wd.date === dateStr);
-          const isWork = wDay?.isWorking;
+  // --- Time grid constants ---
+  const GRID_START_HOUR = 6;  // 06:00
+  const GRID_END_HOUR = 22;   // 22:00
+  const HOUR_HEIGHT = 60;     // px per hour
+  const SLOT_HEIGHT = (90 / 60) * HOUR_HEIGHT; // 90min slot = 90px
 
-          return (
-            <div key={i} className="flex flex-col min-h-full">
-              <div
-                onClick={() => handleDayClick(d)}
-                className={clsx(
-                  "p-4 border-b border-gray-100 text-center sticky top-0 bg-white z-10 cursor-pointer hover:bg-gray-50",
-                  isToday ? "text-blue-600" : "text-gray-900"
-                )}
-              >
-                <div className="text-sm font-medium">{format(d, "EEE")}</div>
-                <div className={clsx("text-2xl font-light mt-1", isToday && "font-semibold")}>{format(d, "d")}</div>
-                <div className="mt-2 text-xs">
-                  {isWork ? (
-                    <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded-full font-medium">Working</span>
-                  ) : (
-                    <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full font-medium">Off</span>
-                  )}
+  const timeToY = (time: string): number => {
+    const [h, m] = time.split(":").map(Number);
+    return (h - GRID_START_HOUR) * HOUR_HEIGHT + (m / 60) * HOUR_HEIGHT;
+  };
+
+  const yToTime = (y: number): string => {
+    const totalMin = Math.round((y / HOUR_HEIGHT) * 15) / 15 * 15 + GRID_START_HOUR * 60; // snap to 15min
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return `${String(Math.max(GRID_START_HOUR, Math.min(h, GRID_END_HOUR))).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
+
+  // Working block resize drag state
+  const [resizingDay, setResizingDay] = useState<string | null>(null);
+  const [resizingEdge, setResizingEdge] = useState<"top" | "bottom" | null>(null);
+  const [resizeDraft, setResizeDraft] = useState<{ startTime: string; endTime: string } | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent, dateStr: string, edge: "top" | "bottom", wDay: WorkingDay) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingDay(dateStr);
+    setResizingEdge(edge);
+    setResizeDraft({ startTime: wDay.startTime, endTime: wDay.endTime });
+  }, []);
+
+  useEffect(() => {
+    if (!resizingDay || !resizingEdge) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!gridRef.current) return;
+      const gridBody = gridRef.current.querySelector(`[data-grid-date="${resizingDay}"]`);
+      if (!gridBody) return;
+      const rect = gridBody.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const time = yToTime(y);
+
+      setResizeDraft(prev => {
+        if (!prev) return prev;
+        if (resizingEdge === "top") {
+          // start must be before end
+          const [eH, eM] = prev.endTime.split(":").map(Number);
+          const [nH, nM] = time.split(":").map(Number);
+          if (nH * 60 + nM + 90 > eH * 60 + eM) return prev; // min 90min
+          return { ...prev, startTime: time };
+        } else {
+          const [sH, sM] = prev.startTime.split(":").map(Number);
+          const [nH, nM] = time.split(":").map(Number);
+          if (sH * 60 + sM + 90 > nH * 60 + nM) return prev;
+          return { ...prev, endTime: time };
+        }
+      });
+    };
+
+    const handleMouseUp = async () => {
+      if (resizeDraft && resizingDay) {
+        const res = await fetch("/api/calendar/working-days", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            instructorId: selectedInstructor,
+            date: resizingDay,
+            isWorking: true,
+            startTime: resizeDraft.startTime,
+            endTime: resizeDraft.endTime,
+          })
+        });
+        if (res.ok) {
+          fetchCalendarData();
+        }
+      }
+      setResizingDay(null);
+      setResizingEdge(null);
+      setResizeDraft(null);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizingDay, resizingEdge, resizeDraft, selectedInstructor, token]);
+
+  const renderWeekView = () => {
+    const hours = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => GRID_START_HOUR + i);
+    const totalHeight = hours.length * HOUR_HEIGHT;
+
+    return (
+      <div ref={gridRef} className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-auto">
+        <div className="flex min-w-[900px]">
+          {/* Time gutter */}
+          <div className="w-14 shrink-0 border-r border-gray-100" style={{ height: totalHeight + 60 }}>
+            <div className="h-[60px] border-b border-gray-100" /> {/* header spacer */}
+            {hours.map(h => (
+              <div key={h} style={{ height: HOUR_HEIGHT }} className="relative border-b border-gray-50">
+                <span className="absolute -top-2.5 left-2 text-[10px] text-gray-400 font-medium">
+                  {String(h).padStart(2, "0")}:00
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Day columns */}
+          <div className="grid grid-cols-7 flex-1 divide-x divide-gray-100">
+            {weekDays.map((d, i) => {
+              const isToday = isSameDay(d, new Date());
+              const dateStr = format(d, "yyyy-MM-dd");
+              const wDay = workingDays.find(wd => wd.date === dateStr);
+              const isWork = wDay?.isWorking;
+              const slotList = getDaySlots(d);
+
+              // Working block positioning
+              const effectiveStart = (resizingDay === dateStr && resizeDraft) ? resizeDraft.startTime : (wDay?.startTime || "09:00");
+              const effectiveEnd = (resizingDay === dateStr && resizeDraft) ? resizeDraft.endTime : (wDay?.endTime || "17:00");
+              const blockTop = timeToY(effectiveStart);
+              const blockHeight = timeToY(effectiveEnd) - blockTop;
+
+              return (
+                <div key={i} className="flex flex-col">
+                  {/* Day header */}
+                  <div
+                    onClick={() => handleDayClick(d)}
+                    className={clsx(
+                      "h-[60px] border-b border-gray-100 text-center cursor-pointer hover:bg-gray-50 shrink-0 flex flex-col items-center justify-center",
+                      isToday ? "bg-blue-50" : "bg-white"
+                    )}
+                  >
+                    <div className={clsx("text-xs font-medium", isToday ? "text-blue-600" : "text-gray-600")}>{format(d, "EEE")}</div>
+                    <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
+                  </div>
+
+                  {/* Grid body */}
+                  <div
+                    className="relative"
+                    style={{ height: totalHeight }}
+                    data-grid-date={dateStr}
+                    onClick={() => {
+                      // Click on empty area to set as working day
+                      if (!isWork && role !== "client") handleDayClick(d);
+                    }}
+                  >
+                    {/* Hour lines */}
+                    {hours.map(h => (
+                      <div key={h} className="absolute left-0 right-0 border-b border-gray-50" style={{ top: (h - GRID_START_HOUR) * HOUR_HEIGHT }} />
+                    ))}
+
+                    {/* Working day block */}
+                    {isWork && (
+                      <div
+                        className="absolute left-1 right-1 bg-emerald-50/80 border border-emerald-200 rounded-lg z-10 overflow-hidden"
+                        style={{ top: blockTop, height: blockHeight }}
+                      >
+                        {/* Drag handle top */}
+                        <div
+                          className="h-3 cursor-ns-resize bg-emerald-200 hover:bg-emerald-300 transition-colors flex items-center justify-center"
+                          onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "top", wDay)}
+                        >
+                          <div className="w-6 h-1 bg-emerald-400 rounded-full" />
+                        </div>
+
+                        {/* Block content: show time label */}
+                        <div className="px-2 py-1 text-center">
+                          <span className="text-[10px] font-bold text-emerald-700">
+                            {effectiveStart} – {effectiveEnd}
+                          </span>
+                        </div>
+
+                        {/* Slot indicators */}
+                        {slotList.map((slot, idx) => {
+                          const slotTop = timeToY(slot.time) - blockTop;
+                          const pending = isPendingReschedule(slot.lesson);
+                          return (
+                            <div
+                              key={idx}
+                              draggable={!!slot.lesson && !pending}
+                              onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
+                              onDrop={(e) => handleDrop(e, slot)}
+                              onDragOver={handleDragOver}
+                              onClick={(e) => { e.stopPropagation(); if (slot.lesson && !pending) setSelectedSlot(slot); }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              className={clsx(
+                                "absolute left-1 right-1 rounded cursor-pointer overflow-hidden border transition-colors",
+                                pending ? "bg-amber-100 border-amber-300" :
+                                slot.isAvailable
+                                  ? draggedLesson
+                                    ? "bg-emerald-100 border-emerald-300 hover:bg-emerald-200"
+                                    : "bg-white/60 border-emerald-100"
+                                  : "bg-blue-100 border-blue-200 hover:bg-blue-200",
+                                slot.lesson && !pending && "hover:shadow-sm"
+                              )}
+                              style={{ top: slotTop, height: SLOT_HEIGHT - 2 }}
+                            >
+                              {slot.lesson && (
+                                <div className="px-1.5 py-0.5 text-[9px] leading-tight">
+                                  <span className="font-semibold text-gray-800 truncate block">
+                                    {slot.lesson.studentFirstName} {slot.lesson.studentLastName}
+                                  </span>
+                                  <span className="text-gray-500">{slot.time}–{slot.endTime}</span>
+                                  {pending && <span className="ml-1 text-amber-600 font-bold">MOVE</span>}
+                                  {isNewLesson(slot.lesson) && <span className="ml-1 text-blue-600 font-bold">NEW</span>}
+                                </div>
+                              )}
+                              {slot.isAvailable && !slot.lesson && (
+                                <div className="px-1.5 py-0.5 text-[9px] text-emerald-500 font-medium">
+                                  {slot.time}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Drag handle bottom */}
+                        <div
+                          className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize bg-emerald-200 hover:bg-emerald-300 transition-colors flex items-center justify-center"
+                          onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "bottom", wDay)}
+                        >
+                          <div className="w-6 h-1 bg-emerald-400 rounded-full" />
+                        </div>
+                      </div>
+                    )}
+
+                    {!isWork && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-xs text-gray-300">Off</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="flex-1 p-2 space-y-2 bg-gray-50/30">
-                {!isWork && <div className="text-xs text-center text-gray-400 py-4">No slots</div>}
-                {slotList.map((slot, idx) => renderSlot(slot, idx))}
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderDayView = () => {
     const slotList = getDaySlots(currentDate);
@@ -511,6 +735,12 @@ export function InstructorCalendar() {
             className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 shadow-sm transition min-h-[44px]"
           >
             Today
+          </button>
+          <button
+            onClick={handleCopyWeek}
+            className="px-3 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 shadow-sm transition min-h-[44px]"
+          >
+            Copy to Next Week
           </button>
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 shadow-sm">
             <button
@@ -882,15 +1112,7 @@ export function InstructorCalendar() {
                       <input type="time" value={settingsForm.endTime} onChange={(e) => setSettingsForm({ ...settingsForm, endTime: e.target.value })} className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]" />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Slot Duration (min)</label>
-                    <select value={settingsForm.slotDurationMin} onChange={(e) => setSettingsForm({ ...settingsForm, slotDurationMin: parseInt(e.target.value) })} className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]">
-                      <option value="45">45 min</option>
-                      <option value="60">60 min</option>
-                      <option value="90">90 min</option>
-                      <option value="120">120 min</option>
-                    </select>
-                  </div>
+                  <p className="text-xs text-gray-400 mt-1">Lesson duration: 90 min (fixed)</p>
                 </>
               )}
               <div className="flex gap-3 pt-2">
