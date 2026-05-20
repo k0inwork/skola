@@ -18,9 +18,6 @@ function addDaysToDate(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
 
 // --- Slot generation helper ---
 
@@ -859,9 +856,10 @@ router.post("/copy-week", async (req, res) => {
       lte(instructorWorkingDays.date, addDaysToDate(sourceWeekStart, 6))
     ));
 
-    const srcStart = new Date(sourceWeekStart);
-    const tgtStart = new Date(targetWeekStart);
-    const diffMs = tgtStart.getTime() - srcStart.getTime();
+    // Use UTC-safe parsing to compute day offset
+    const srcStart = new Date(sourceWeekStart + "T00:00:00Z");
+    const tgtStart = new Date(targetWeekStart + "T00:00:00Z");
+    const dayOffset = Math.round((tgtStart.getTime() - srcStart.getTime()) / 86400000);
 
     // Clear all existing unbooked slots in the target week first
     await db.delete(slots).where(and(
@@ -874,7 +872,7 @@ router.post("/copy-week", async (req, res) => {
 
     let copied = 0;
     for (const day of sourceDays) {
-      const newDate = formatDate(new Date(new Date(day.date).getTime() + diffMs));
+      const newDate = addDaysToDate(day.date, dayOffset);
 
       // Upsert target day
       const existing = await db.select().from(instructorWorkingDays).where(and(
