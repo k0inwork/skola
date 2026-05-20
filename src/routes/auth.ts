@@ -24,7 +24,7 @@ router.get("/google/url", (req, res) => {
     client_id: googleClientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "email profile https://www.googleapis.com/auth/calendar",
+    scope: "openid email profile",
     access_type: "offline",
     prompt: "consent",
     state,
