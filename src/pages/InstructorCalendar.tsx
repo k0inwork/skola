@@ -464,13 +464,16 @@ export function InstructorCalendar() {
   const [resizingEdge, setResizingEdge] = useState<"top" | "bottom" | null>(null);
   const [resizeDraft, setResizeDraft] = useState<{ startTime: string; endTime: string } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const resizeDraftRef = useRef<{ startTime: string; endTime: string } | null>(null);
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent, dateStr: string, edge: "top" | "bottom", wDay: WorkingDay) => {
     e.preventDefault();
     e.stopPropagation();
+    const draft = { startTime: wDay.startTime, endTime: wDay.endTime };
     setResizingDay(dateStr);
     setResizingEdge(edge);
-    setResizeDraft({ startTime: wDay.startTime, endTime: wDay.endTime });
+    setResizeDraft(draft);
+    resizeDraftRef.current = draft;
   }, []);
 
   useEffect(() => {
@@ -484,25 +487,30 @@ export function InstructorCalendar() {
       const y = e.clientY - rect.top;
       const time = yToTime(y);
 
-      setResizeDraft(prev => {
-        if (!prev) return prev;
-        if (resizingEdge === "top") {
-          // start must be before end
-          const [eH, eM] = prev.endTime.split(":").map(Number);
-          const [nH, nM] = time.split(":").map(Number);
-          if (nH * 60 + nM + 90 > eH * 60 + eM) return prev; // min 90min
-          return { ...prev, startTime: time };
-        } else {
-          const [sH, sM] = prev.startTime.split(":").map(Number);
-          const [nH, nM] = time.split(":").map(Number);
-          if (sH * 60 + sM + 90 > nH * 60 + nM) return prev;
-          return { ...prev, endTime: time };
+      const prev = resizeDraftRef.current;
+      if (!prev) return;
+
+      let next = prev;
+      if (resizingEdge === "top") {
+        const [eH, eM] = prev.endTime.split(":").map(Number);
+        const [nH, nM] = time.split(":").map(Number);
+        if (nH * 60 + nM + 90 <= eH * 60 + eM) {
+          next = { ...prev, startTime: time };
         }
-      });
+      } else {
+        const [sH, sM] = prev.startTime.split(":").map(Number);
+        const [nH, nM] = time.split(":").map(Number);
+        if (sH * 60 + sM + 90 <= nH * 60 + nM) {
+          next = { ...prev, endTime: time };
+        }
+      }
+      resizeDraftRef.current = next;
+      setResizeDraft(next);
     };
 
     const handleMouseUp = async () => {
-      if (resizeDraft && resizingDay) {
+      const draft = resizeDraftRef.current;
+      if (draft && resizingDay) {
         const res = await fetch("/api/calendar/working-days", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -510,8 +518,8 @@ export function InstructorCalendar() {
             instructorId: selectedInstructor,
             date: resizingDay,
             isWorking: true,
-            startTime: resizeDraft.startTime,
-            endTime: resizeDraft.endTime,
+            startTime: draft.startTime,
+            endTime: draft.endTime,
           })
         });
         if (res.ok) {
@@ -521,6 +529,7 @@ export function InstructorCalendar() {
       setResizingDay(null);
       setResizingEdge(null);
       setResizeDraft(null);
+      resizeDraftRef.current = null;
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -529,7 +538,7 @@ export function InstructorCalendar() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [resizingDay, resizingEdge, resizeDraft, selectedInstructor, token]);
+  }, [resizingDay, resizingEdge, selectedInstructor, token]);
 
   const renderWeekView = () => {
     const hours = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => GRID_START_HOUR + i);
@@ -597,15 +606,15 @@ export function InstructorCalendar() {
                     {/* Working day block */}
                     {isWork && (
                       <div
-                        className="absolute left-1 right-1 bg-emerald-50/80 border border-emerald-200 rounded-lg z-10 overflow-hidden"
+                        className="absolute left-1 right-1 bg-emerald-50/80 border border-emerald-200 rounded-lg z-10"
                         style={{ top: blockTop, height: blockHeight }}
                       >
                         {/* Drag handle top */}
                         <div
-                          className="h-3 cursor-ns-resize bg-emerald-200 hover:bg-emerald-300 transition-colors flex items-center justify-center"
+                          className="h-5 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-t-lg"
                           onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "top", wDay)}
                         >
-                          <div className="w-6 h-1 bg-emerald-400 rounded-full" />
+                          <div className="w-8 h-1.5 bg-emerald-500 rounded-full" />
                         </div>
 
                         {/* Block content: show time label */}
@@ -661,10 +670,10 @@ export function InstructorCalendar() {
 
                         {/* Drag handle bottom */}
                         <div
-                          className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize bg-emerald-200 hover:bg-emerald-300 transition-colors flex items-center justify-center"
+                          className="absolute bottom-0 left-0 right-0 h-5 cursor-ns-resize bg-emerald-300/60 hover:bg-emerald-400 transition-colors flex items-center justify-center rounded-b-lg"
                           onMouseDown={(e) => wDay && handleResizeMouseDown(e, dateStr, "bottom", wDay)}
                         >
-                          <div className="w-6 h-1 bg-emerald-400 rounded-full" />
+                          <div className="w-8 h-1.5 bg-emerald-500 rounded-full" />
                         </div>
                       </div>
                     )}
