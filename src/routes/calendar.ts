@@ -895,9 +895,33 @@ router.post("/copy-week", async (req, res) => {
       lte(slots.date, addDaysToDate(sourceWeekStart, 6))
     ));
 
+    // Fetch existing booked slots in target week to check overlaps
+    const targetBooked = await db.select().from(slots).where(and(
+      eq(slots.instructorId, instructorId),
+      gte(slots.date, targetWeekStart),
+      lte(slots.date, addDaysToDate(targetWeekStart, 6)),
+      eq(slots.isBooked, true)
+    ));
+
     let copied = 0;
     for (const slot of sourceSlots) {
       const newDate = addDaysToDate(slot.date, dayOffset);
+      const [sH, sM] = slot.startTime.split(":").map(Number);
+      const [eH, eM] = slot.endTime.split(":").map(Number);
+      const newStart = sH * 60 + sM;
+      const newEnd = eH * 60 + eM;
+
+      // Skip if overlaps any existing booked slot in target week
+      const overlaps = targetBooked.some(b => {
+        if (b.date !== newDate) return false;
+        const [bSH, bSM] = b.startTime.split(":").map(Number);
+        const [bEH, bEM] = b.endTime.split(":").map(Number);
+        const bStart = bSH * 60 + bSM;
+        const bEnd = bEH * 60 + bEM;
+        return Math.min(newEnd, bEnd) > Math.max(newStart, bStart);
+      });
+      if (overlaps) continue;
+
       await db.insert(slots).values({
         instructorId,
         date: newDate,
