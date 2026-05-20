@@ -1,22 +1,19 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index";
-import { users } from "../db/schema";
-import { compare, hash } from "bcryptjs";
-import { generateTokenPair, verifyToken, requireAuth } from "../middleware/auth";
-import { validate, loginSchema } from "../lib/validation";
-import { students } from "../db/schema";
+import { users, googleTokens, students } from "../db/schema";
+import { generateTokenPair, requireAuth, verifyToken } from "../middleware/auth";
 import crypto from "crypto";
 
 import { config } from "../lib/config.js";
 
 const router = Router();
 
+// --- Google OAuth: generate auth URL ---
 router.get("/google/url", (req, res) => {
   const googleClientId = config.GOOGLE_CLIENT_ID;
   if (!googleClientId) {
-    console.error("Missing GOOGLE_CLIENT_ID environment variable.");
-    res.status(500).json({ error: "Google OAuth is not configured. Please add GOOGLE_CLIENT_ID to your secrets." });
+    res.status(500).json({ error: "Google OAuth is not configured." });
     return;
   }
   const baseUrl = config.APP_URL || `${req.protocol}://${req.get("host")}`;
@@ -27,40 +24,42 @@ router.get("/google/url", (req, res) => {
     client_id: googleClientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "email profile",
+    scope: "email profile https://www.googleapis.com/auth/calendar",
+    access_type: "offline",
+    prompt: "consent",
     state,
   });
   res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
 });
 
+// --- Google OAuth: callback ---
 router.get("/google/callback", async (req, res) => {
   const { code, state } = req.query;
   const clientId = config.GOOGLE_CLIENT_ID;
   const clientSecret = config.GOOGLE_CLIENT_SECRET;
 
-  // Verify state param to prevent CSRF
   const savedState = req.cookies?.oauth_state;
   if (!savedState || !state || savedState !== state) {
-    res.status(400).send("Invalid or missing OAuth state parameter.");
+    res.status(400).send("Invalid OAuth state.");
     return;
   }
   res.clearCookie("oauth_state");
 
   if (!clientId || !clientSecret) {
-    console.error("Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET");
-    res.status(500).send("OAuth configuration missing on server.");
+    res.status(500).send("OAuth configuration missing.");
     return;
   }
 
   const baseUrl = config.APP_URL || `${req.protocol}://${req.get("host")}`;
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
-  
+
   if (!code) {
     res.status(400).send("Missing code");
     return;
   }
-  
+
   try {
+    // Exchange code for tokens
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -72,48 +71,41 @@ router.get("/google/callback", async (req, res) => {
         redirect_uri: redirectUri,
       }),
     });
-    
+
     if (!tokenRes.ok) {
       console.error(await tokenRes.text());
       res.status(400).send("Failed to exchange code for token");
       return;
     }
-    
-    const { access_token } = await tokenRes.json();
-    
+
+    const tokenData = await tokenRes.json();
+    const { access_token, refresh_token, expires_in, scope } = tokenData;
+
+    // Get user info
     const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${access_token}` },
     });
     const userInfo = await userRes.json();
-    
+
     if (!userInfo.email) {
       res.status(400).send("No email found in Google account");
       return;
     }
-    
+
+    // Determine role — admin emails from config
+    const isAdmin = config.ADMIN_EMAILS.includes(userInfo.email);
+
     let [user] = await db.select().from(users).where(eq(users.email, userInfo.email)).limit(1);
-    
+
     if (!user) {
-      // create user as client
-      const fakePw = await hash(crypto.randomUUID(), 10);
       const [newUser] = await db.insert(users).values({
         email: userInfo.email,
-        passwordHash: fakePw,
-        role: "client"
+        role: isAdmin ? "admin" : "client",
       }).returning();
       user = newUser;
-      
-      // Also create a student profile
-      await db.insert(students).values({
-        userId: user.id,
-        firstName: userInfo.given_name || "Student",
-        lastName: userInfo.family_name || "",
-        email: userInfo.email,
-      });
-    } else if (user.role === "client") {
-      // Check if student profile needs creating for existing client
-      const [existingStudent] = await db.select().from(students).where(eq(students.userId, user.id));
-      if (!existingStudent) {
+
+      // Create student profile for non-admin
+      if (!isAdmin) {
         await db.insert(students).values({
           userId: user.id,
           firstName: userInfo.given_name || "Student",
@@ -121,13 +113,54 @@ router.get("/google/callback", async (req, res) => {
           email: userInfo.email,
         });
       }
+    } else {
+      // Update role if admin list changed
+      if (isAdmin && user.role === "client") {
+        await db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));
+        user = { ...user, role: "admin" };
+      }
+
+      // Ensure student profile exists for clients
+      if (user.role === "client") {
+        const [existingStudent] = await db.select().from(students).where(eq(students.userId, user.id));
+        if (!existingStudent) {
+          await db.insert(students).values({
+            userId: user.id,
+            firstName: userInfo.given_name || "Student",
+            lastName: userInfo.family_name || "",
+            email: userInfo.email,
+          });
+        }
+      }
+    }
+
+    // Store/upsdate Google tokens
+    const [existingToken] = await db.select().from(googleTokens).where(eq(googleTokens.userId, user.id)).limit(1);
+    const expiryDate = expires_in ? new Date(Date.now() + expires_in * 1000) : null;
+
+    if (existingToken) {
+      await db.update(googleTokens).set({
+        accessToken: access_token,
+        refreshToken: refresh_token || existingToken.refreshToken,
+        expiryDate,
+        scope,
+        updatedAt: new Date(),
+      }).where(eq(googleTokens.id, existingToken.id));
+    } else {
+      await db.insert(googleTokens).values({
+        userId: user.id,
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        expiryDate,
+        scope,
+      });
     }
 
     const { accessToken, refreshToken } = generateTokenPair({
       userId: user.id,
       role: user.role,
     });
-    
+
     const appUrl = config.APP_URL || "/";
     const params = new URLSearchParams({ accessToken, refreshToken, role: user.role });
     res.redirect(`${appUrl}/oauth-callback?${params.toString()}`);
@@ -137,35 +170,7 @@ router.get("/google/callback", async (req, res) => {
   }
 });
 
-router.post("/login", validate(loginSchema), async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-
-    if (!user) {
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
-    }
-
-    const valid = await compare(password, user.passwordHash);
-    if (!valid) {
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
-    }
-
-    const { accessToken, refreshToken } = generateTokenPair({
-      userId: user.id,
-      role: user.role,
-    });
-
-    res.json({ accessToken, refreshToken, role: user.role });
-  } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
+// --- Token refresh ---
 router.post("/refresh", (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
@@ -174,10 +179,10 @@ router.post("/refresh", (req, res) => {
   }
 
   try {
-    const payload = verifyToken(refreshToken, true);
+    const decoded = verifyToken(refreshToken, true);
     const { accessToken, refreshToken: newRefresh } = generateTokenPair({
-      userId: payload.userId,
-      role: payload.role,
+      userId: decoded.userId,
+      role: decoded.role,
     });
     res.json({ accessToken, refreshToken: newRefresh });
   } catch {

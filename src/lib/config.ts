@@ -7,6 +7,7 @@ interface AppConfig {
   JWT_REFRESH_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  ADMIN_EMAILS: string[];
   PORT: number;
   HOST: string;
   APP_URL: string;
@@ -16,12 +17,15 @@ interface AppConfig {
   SMTP_PASS: string;
 }
 
+const ADMIN_EMAILS_DEFAULT = "tabuns001@gmail.com,k0in71@gmail.com";
+
 const defaultConfig: AppConfig = {
   DATABASE_URL: process.env.DATABASE_URL || "",
   JWT_SECRET: process.env.JWT_SECRET || "",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || "",
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
+  ADMIN_EMAILS: (process.env.ADMIN_EMAILS || ADMIN_EMAILS_DEFAULT).split(",").map(e => e.trim()),
   PORT: parseInt(process.env.PORT || "3000"),
   HOST: process.env.HOST || "0.0.0.0",
   APP_URL: process.env.APP_URL || "",

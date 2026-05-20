@@ -3,7 +3,6 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import { createServer } from "http";
@@ -62,12 +61,6 @@ async function startServer() {
   }));
   app.use(express.json());
 
-  const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    message: { error: "Too many login attempts. Try again in 15 minutes." },
-  });
-
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
@@ -104,7 +97,6 @@ async function startServer() {
   });
 
   app.use("/api/auth", authRoutes);
-  app.use("/api/auth/login", loginLimiter);
   app.use("/api/students", studentRoutes);
   app.use("/api/payments", paymentRoutes);
   app.use("/api/dashboard", dashboardRoutes);

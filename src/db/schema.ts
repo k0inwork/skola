@@ -5,11 +5,28 @@ export const users = pgTable("users", {
     .primaryKey()
     .defaultRandom(),
   email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
-  role: text("role").notNull().default("client"), // Enum check moved to validation logic for simplicity or use custom pgEnum
+  passwordHash: text("password_hash"),
+  role: text("role").notNull().default("client"),
   createdAt: timestamp("created_at")
     .notNull()
     .defaultNow(),
+});
+
+export const googleTokens = pgTable("google_tokens", {
+  id: uuid("id")
+    .primaryKey()
+    .defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  expiryDate: timestamp("expiry_date"),
+  scope: text("scope"),
+  createdAt: timestamp("created_at")
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
 export const students = pgTable("students", {
@@ -78,6 +95,7 @@ export const lessons = pgTable("lessons", {
   proposedDate: text("proposed_date"),
   proposedStartTime: text("proposed_start_time"),
   proposedEndTime: text("proposed_end_time"),
+  googleEventId: text("google_event_id"),
   createdAt: timestamp("created_at")
     .notNull()
     .defaultNow(),

@@ -15,6 +15,13 @@
       "when": 1779246000000,
       "tag": "0001_add_slots_table",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779332400000,
+      "tag": "0002_google_tokens_and_nullable_pw",
+      "breakpoints": true
     }
   ]
 }
