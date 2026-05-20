@@ -39,7 +39,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </button>
           <button
-            onClick={onConfirm}
+            onClick={() => { onCancel(); onConfirm(); }}
             className={clsx(
               "px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors",
               variant === "danger"
