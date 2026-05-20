@@ -289,6 +289,7 @@ export function InstructorCalendar() {
     if (!draggedLesson || !selectedInstructor) return;
     if (!targetSlot.isAvailable) { alert("This slot is already booked"); return; }
     if (draggedLesson.date === targetSlot.date && draggedLesson.startTime === targetSlot.time) return;
+    if (!confirm("Reschedule this lesson? Student will be notified.")) { setDraggedLesson(null); return; }
     try {
       const res = await fetch(`/api/calendar/reschedule-lesson/${draggedLesson.id}`, {
         method: "POST",
@@ -712,7 +713,7 @@ export function InstructorCalendar() {
                           onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
                           onDrop={(e) => handleDrop(e, slot)}
                           onDragOver={handleDragOver}
-                          onMouseDown={(e) => canMove && handleSlotMoveDown(e, slot)}
+                          onMouseDown={(e) => canMove && !slot.lesson && handleSlotMoveDown(e, slot)}
                           onDoubleClick={() => {
                             // Cancel any drag started by the mousedowns
                             setMovingSlotId(null);
