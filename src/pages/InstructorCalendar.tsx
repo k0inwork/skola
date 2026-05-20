@@ -637,6 +637,16 @@ export function InstructorCalendar() {
                           onDrop={(e) => handleDrop(e, slot)}
                           onDragOver={handleDragOver}
                           onMouseDown={(e) => canMove && handleSlotMoveDown(e, slot)}
+                          onDoubleClick={() => {
+                            if (canMove) {
+                              if (confirm(`Delete slot ${slot.time}–${slot.endTime}?`)) {
+                                fetch(`/api/calendar/slots/${slot.id}`, {
+                                  method: "DELETE",
+                                  headers: { Authorization: `Bearer ${token}` },
+                                }).then(r => { if (r.ok) fetchCalendarData(); else alert("Failed to delete slot"); });
+                              }
+                            }
+                          }}
                           onClick={(e) => { e.stopPropagation(); if (slot.lesson && !pending) setSelectedSlot(slot); }}
                           className={clsx(
                             "absolute left-1.5 right-1.5 rounded border transition-all select-none",

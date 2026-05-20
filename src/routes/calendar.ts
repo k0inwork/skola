@@ -970,6 +970,41 @@ router.patch("/slots/:slotId", async (req, res) => {
   }
 });
 
+// Delete an individual unbooked slot
+router.delete("/slots/:slotId", async (req, res) => {
+  try {
+    const { slotId } = req.params;
+
+    if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const [slot] = await db.select().from(slots).where(eq(slots.id, slotId)).limit(1);
+    if (!slot) {
+      res.status(404).json({ error: "Slot not found" });
+      return;
+    }
+
+    if (slot.isBooked) {
+      res.status(409).json({ error: "Cannot delete a booked slot" });
+      return;
+    }
+
+    await db.delete(slots).where(eq(slots.id, slotId));
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("calendar_update", { instructorId: slot.instructorId, date: slot.date });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete slot error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Locations CRUD
 router.get("/locations", async (req, res) => {
   try {
