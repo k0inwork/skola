@@ -466,6 +466,7 @@ export function InstructorCalendar() {
   const [movingSlotId, setMovingSlotId] = useState<string | null>(null);
   const [moveDraft, setMoveDraft] = useState<{ startTime: string; endTime: string; slotId: string; date: string } | null>(null);
   const [highlightedSlotId, setHighlightedSlotId] = useState<string | null>(null);
+  const highlightedSlotIdRef = useRef<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const moveDraftRef = useRef<{ startTime: string; endTime: string; slotId: string; date: string } | null>(null);
   const moveStartYRef = useRef<number>(0);
@@ -556,6 +557,7 @@ export function InstructorCalendar() {
           }
         }
         setHighlightedSlotId(bestId);
+        highlightedSlotIdRef.current = bestId;
       }
     };
 
@@ -599,9 +601,10 @@ export function InstructorCalendar() {
       moveDraftRef.current = null;
       moveStartSlotRef.current = null;
 
-      // Capture highlighted target for booked slot drops
-      const highlightedTargetId = highlightedSlotId;
+      // Capture highlighted target for booked slot drops (from ref, not stale state)
+      const highlightedTargetId = highlightedSlotIdRef.current;
       setHighlightedSlotId(null);
+      highlightedSlotIdRef.current = null;
 
       // Process the drop async after state is clean
       (async () => {
