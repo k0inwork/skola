@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "../lib/store";
+import { toastSuccess, toastError } from "../lib/notify";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Plus, DollarSign, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface Payment {
@@ -109,20 +111,23 @@ export function Payments() {
       if (res.ok) {
         setIsFormOpen(false);
         setForm({ studentId: "", amount: "", paidAt: new Date().toISOString().split("T")[0], method: "cash", comment: "" });
+        toastSuccess("Payment created");
         fetchPayments();
         fetchStats();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to create payment");
+        toastError(data.error || "Failed to create payment");
       }
     } catch (err) {
       console.error(err);
-      alert("Error creating payment");
+      toastError("Error creating payment");
     }
   };
 
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
   const handleDeletePayment = async (id: string) => {
-    if (!confirm("Delete this payment?")) return;
+    setDeleteTarget(null);
     try {
       const res = await fetch(`/api/payments/${id}`, {
         method: "DELETE",
@@ -251,7 +256,7 @@ export function Payments() {
                   <td className="p-4 text-gray-500 max-w-xs truncate">{payment.comment || "-"}</td>
                   <td className="p-4">
                     <button
-                      onClick={() => handleDeletePayment(payment.id)}
+                      onClick={() => setDeleteTarget(payment.id)}
                       className="text-xs text-red-500 hover:text-red-700"
                     >
                       Delete
@@ -350,6 +355,17 @@ export function Payments() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete payment?"
+        message="This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => deleteTarget && handleDeletePayment(deleteTarget)}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

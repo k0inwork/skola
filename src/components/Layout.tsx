@@ -1,5 +1,6 @@
 import { Outlet, Navigate, Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
+import { ToastContainer } from "../lib/notify";
 import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon, MessageCircle, Bell, X } from "lucide-react";
 import clsx from "clsx";
 import { useState, useEffect, useRef } from "react";
@@ -120,6 +121,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+      <ToastContainer />
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 bg-slate-900 text-white flex-col">
         <div className="p-6 flex items-center justify-between">

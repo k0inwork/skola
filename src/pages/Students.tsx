@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
+import { toastSuccess, toastError } from "../lib/notify";
 import { Plus, Search, User as UserIcon, X } from "lucide-react";
 
 interface Student {
@@ -67,13 +68,14 @@ export function Students() {
         setNewStudent({ firstName: "", lastName: "", email: "", phone: "" });
         setCreateAccount(false);
         setPassword("");
+        toastSuccess("Student added");
         fetchStudents();
       } else {
-        alert("Failed to add student");
+        toastError("Failed to add student");
       }
     } catch (err) {
       console.error(err);
-      alert("Network error");
+      toastError("Network error");
     } finally {
       setSaving(false);
     }

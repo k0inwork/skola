@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { format, addDays, startOfWeek, isSameDay } from "date-fns";
 import { useAuthStore } from "../lib/store";
+import { toastError } from "../lib/notify";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
@@ -124,17 +125,15 @@ export function StudentCalendar() {
     if (!bookingSlot) return;
 
     if (bookingSlot.isMine && bookingSlot.lesson) {
-      if (confirm("Are you sure you want to cancel your lesson?")) {
-        const res = await fetch(`/api/calendar/cancel-lesson/${bookingSlot.lesson.id}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          setIsBookingOpen(false);
-          fetchCalendarData();
-        } else {
-          alert("Failed to cancel lesson");
-        }
+      const res = await fetch(`/api/calendar/cancel-lesson/${bookingSlot.lesson.id}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setIsBookingOpen(false);
+        fetchCalendarData();
+      } else {
+        toastError("Failed to cancel lesson");
       }
       return;
     }
@@ -150,7 +149,7 @@ export function StudentCalendar() {
         fetchCalendarData();
       } else {
         const body = await res.json();
-        alert(body.error || "Booking failed");
+        toastError(body.error || "Booking failed");
       }
     } catch (err) {
       console.error("Booking error:", err);

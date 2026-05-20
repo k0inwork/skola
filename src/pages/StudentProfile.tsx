@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
+import { toastSuccess, toastError } from "../lib/notify";
 import { Mail } from "lucide-react";
 
 export function StudentProfile() {
@@ -57,13 +58,13 @@ export function StudentProfile() {
           }),
         });
         if (res.ok) {
-          alert("Profile updated successfully!");
+          toastSuccess("Profile updated successfully!");
         } else {
-          alert("Failed to update profile");
+          toastError("Failed to update profile");
         }
       } catch (err) {
         console.error(err);
-        alert("Error saving profile");
+        toastError("Error saving profile");
       } finally {
         setSaving(false);
       }

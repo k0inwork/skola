@@ -1,6 +1,8 @@
 import React, { useState, useEffect, FormEvent, useRef, useCallback } from "react";
 import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
+import { toastSuccess, toastError, toast } from "../lib/notify";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
@@ -63,6 +65,19 @@ export function InstructorCalendar() {
   const [dbSlots, setDbSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+
+  // Confirm dialog state
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    variant?: "danger" | "primary";
+    onConfirm: () => void;
+  }>({ open: false, title: "", message: "", onConfirm: () => {} });
+
+  const askConfirm = (title: string, message: string, onConfirm: () => void, variant?: "danger" | "primary") => {
+    setConfirmState({ open: true, title, message, onConfirm, variant });
+  };
 
   // Track "last seen" for new lesson badge
   const [lastVisited, setLastVisited] = useState<string | null>(() => localStorage.getItem("calendarLastVisited"));
@@ -213,9 +228,9 @@ export function InstructorCalendar() {
         await fetchCalendarData();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to save settings");
+        toastError(data.error || "Failed to save settings");
       }
-    } catch (err) { console.error(err); alert("Error saving settings"); }
+    } catch (err) { console.error(err); toastError("Error saving settings"); }
   };
 
   const handleMarkPaid = async (lessonId: string, studentId: string | null) => {
@@ -226,8 +241,8 @@ export function InstructorCalendar() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ lessonId, studentId })
       });
-      if (res.ok) { fetchCalendarData(); } else { alert("Failed to mark as paid"); }
-    } catch (err) { console.error(err); alert("Error marking as paid"); }
+      if (res.ok) { fetchCalendarData(); } else { toastError("Failed to mark as paid"); }
+    } catch (err) { console.error(err); toastError("Error marking as paid"); }
   };
 
   const handleUpdateLesson = async (lessonId: string, notes: string, location: string, amount: string) => {
@@ -237,8 +252,8 @@ export function InstructorCalendar() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ notes, location, amount })
       });
-      if (res.ok) { fetchCalendarData(); } else { alert("Failed to update lesson"); }
-    } catch (err) { console.error(err); alert("Error updating lesson"); }
+      if (res.ok) { fetchCalendarData(); } else { toastError("Failed to update lesson"); }
+    } catch (err) { console.error(err); toastError("Error updating lesson"); }
   };
 
   const handleReschedule = async () => {
@@ -250,8 +265,8 @@ export function InstructorCalendar() {
         body: JSON.stringify({ targetSlotId: selectedTargetSlotId })
       });
       if (res.ok) { setIsRescheduleOpen(false); setRescheduleLesson(null); setSelectedSlot(null); setSelectedTargetSlotId(null); fetchCalendarData(); }
-      else { const data = await res.json(); alert(data.error || "Failed to reschedule"); }
-    } catch (err) { console.error(err); alert("Error rescheduling lesson"); }
+      else { const data = await res.json(); toastError(data.error || "Failed to reschedule"); }
+    } catch (err) { console.error(err); toastError("Error rescheduling lesson"); }
   };
 
   // Copy week handler
@@ -266,13 +281,13 @@ export function InstructorCalendar() {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(`Copied ${data.copied} slot(s) to next week`);
+        toastSuccess(`Copied ${data.copied} slot(s) to next week`);
         fetchCalendarData();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to copy week");
+        toastError(data.error || "Failed to copy week");
       }
-    } catch (err) { console.error(err); alert("Error copying week"); }
+    } catch (err) { console.error(err); toastError("Error copying week"); }
   };
 
   // Drag & drop handlers
@@ -287,17 +302,20 @@ export function InstructorCalendar() {
   const handleDrop = async (e: React.DragEvent, targetSlot: Slot) => {
     e.preventDefault();
     if (!draggedLesson || !selectedInstructor) return;
-    if (!targetSlot.isAvailable) { alert("This slot is already booked"); return; }
+    if (!targetSlot.isAvailable) { toastError("This slot is already booked"); return; }
     if (draggedLesson.date === targetSlot.date && draggedLesson.startTime === targetSlot.time) return;
-    if (!confirm("Reschedule this lesson? Student will be notified.")) { setDraggedLesson(null); return; }
-    try {
-      const res = await fetch(`/api/calendar/reschedule-lesson/${draggedLesson.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ targetSlotId: targetSlot.id })
-      });
-      if (res.ok) { fetchCalendarData(); } else { const data = await res.json(); alert(data.error || "Failed to reschedule"); }
-    } catch (err) { console.error(err); alert("Error rescheduling"); }
+    const lesson = draggedLesson;
+    setDraggedLesson(null);
+    askConfirm("Reschedule lesson?", "Student will be notified.", async () => {
+      try {
+        const res = await fetch(`/api/calendar/reschedule-lesson/${lesson.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ targetSlotId: targetSlot.id })
+        });
+        if (res.ok) { fetchCalendarData(); } else { const data = await res.json(); toastError(data.error || "Failed to reschedule"); }
+      } catch (err) { console.error(err); toastError("Error rescheduling"); }
+    });
     setDraggedLesson(null);
   };
 
@@ -331,11 +349,11 @@ export function InstructorCalendar() {
         fetchCalendarData();
       } else {
         const data = await res.json();
-        alert(data.error || `Failed to ${action} reschedule`);
+        toastError(data.error || `Failed to ${action} reschedule`);
       }
     } catch (err) {
       console.error(err);
-      alert(`Error ${action}ing reschedule`);
+      toastError(`Error ${action}ing reschedule`);
     }
   };
 
@@ -621,29 +639,31 @@ export function InstructorCalendar() {
               );
 
           if (targetSlot && targetSlot.id !== slotId) {
-            if (!confirm("Reschedule this lesson? Student will be notified.")) return;
-            const srcSlot = dbSlots.find(s => s.id === slotId);
-            const res = await fetch(`/api/calendar/reschedule-lesson/${srcSlot!.lesson!.id}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ targetSlotId: targetSlot.id })
+            askConfirm("Reschedule lesson?", "Student will be notified.", async () => {
+              const srcSlot = dbSlots.find(s => s.id === slotId);
+              const res = await fetch(`/api/calendar/reschedule-lesson/${srcSlot!.lesson!.id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ targetSlotId: targetSlot.id })
+              });
+              if (res.ok) { fetchCalendarData(); }
+              else { const data = await res.json(); toastError(data.error || "Reschedule failed"); }
             });
-            if (res.ok) { fetchCalendarData(); }
-            else { const data = await res.json(); alert(data.error || "Reschedule failed"); }
           } else {
             // Same day, different time — PATCH the slot time (slot stays in same day)
             if (dateChanged) {
-              alert("No free slot at that position. Drop on a green (free) slot to reschedule across days.");
+              toastError("No free slot at that position. Drop on a green (free) slot to reschedule across days.");
               return;
             }
-            if (!confirm("Reschedule this lesson? Student will be notified.")) return;
-            const res = await fetch(`/api/calendar/slots/${slotId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ startTime: newStart, endTime: newEnd })
+            askConfirm("Reschedule lesson?", "Student will be notified.", async () => {
+              const res = await fetch(`/api/calendar/slots/${slotId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ startTime: newStart, endTime: newEnd })
+              });
+              if (res.ok) { fetchCalendarData(); }
+              else { const data = await res.json().catch(() => ({})); toastError(data.error || "Failed to move slot"); }
             });
-            if (res.ok) { fetchCalendarData(); }
-            else { const data = await res.json().catch(() => ({})); alert(data.error || "Failed to move slot"); }
           }
         } else {
           // Free slot — just PATCH time + date
@@ -653,7 +673,7 @@ export function InstructorCalendar() {
             body: JSON.stringify({ startTime: newStart, endTime: newEnd, date: newDate })
           });
           if (res.ok) { fetchCalendarData(); }
-          else { const data = await res.json().catch(() => ({})); alert(data.error || "Failed to move slot"); }
+          else { const data = await res.json().catch(() => ({})); toastError(data.error || "Failed to move slot"); }
         }
       })();
     };
@@ -751,12 +771,13 @@ export function InstructorCalendar() {
                             moveDraftRef.current = null;
                             moveStartSlotRef.current = null;
                             if (canMove) {
-                              if (confirm(`Delete slot ${slot.time}–${slot.endTime}?`)) {
-                                fetch(`/api/calendar/slots/${slot.id}`, {
+                              askConfirm("Delete slot?", `${slot.time}–${slot.endTime}`, async () => {
+                                const r = await fetch(`/api/calendar/slots/${slot.id}`, {
                                   method: "DELETE",
                                   headers: { Authorization: `Bearer ${token}` },
-                                }).then(r => { if (r.ok) fetchCalendarData(); else alert("Failed to delete slot"); });
-                              }
+                                });
+                                if (r.ok) fetchCalendarData(); else toastError("Failed to delete slot");
+                              });
                             }
                           }}
                           onClick={(e) => { e.stopPropagation(); if (moveJustFinishedRef.current) return; if (slot.lesson && !pending) setSelectedSlot(slot); }}
@@ -1237,7 +1258,7 @@ export function InstructorCalendar() {
                     body: JSON.stringify({ reason: cancelReason || undefined })
                   });
                   if (res.ok) { setIsCancelOpen(false); setCancelLesson(null); setSelectedSlot(null); fetchCalendarData(); }
-                  else { const data = await res.json(); alert(data.error || "Failed to cancel lesson"); }
+                  else { const data = await res.json(); toastError(data.error || "Failed to cancel lesson"); }
                 }}
                 className="flex-1 bg-red-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-red-700 transition flex items-center justify-center gap-2 min-h-[44px]"
               >
@@ -1281,6 +1302,17 @@ export function InstructorCalendar() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        variant={confirmState.variant}
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
+        onConfirm={confirmState.onConfirm}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+      />
     </div>
   );
 }
