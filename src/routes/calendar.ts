@@ -951,11 +951,46 @@ router.patch("/slots/:slotId", async (req, res) => {
 
     await db.update(slots).set({ startTime, endTime, updatedAt: new Date() }).where(eq(slots.id, slotId));
 
-    // If booked, also update the lesson
+    // If booked, also update the lesson and notify student
     if (slot.isBooked && slot.lessonId) {
+      const [lesson] = await db.select().from(lessons).where(eq(lessons.id, slot.lessonId)).limit(1);
       await db.update(lessons)
-        .set({ startTime, endTime })
+        .set({ startTime, endTime, status: "rescheduled" })
         .where(eq(lessons.id, slot.lessonId));
+
+      // Notify student via message
+      if (lesson?.studentId) {
+        const { messages: msgs } = await import("../db/schema.js");
+        const [student] = await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1);
+        const oldTime = `${lesson.date} (${lesson.startTime}-${lesson.endTime})`;
+        const newTime = `${slot.date} (${startTime}-${endTime})`;
+        const content = `Lesson rescheduled by Instructor: ${oldTime} → ${newTime}`;
+
+        const [msg] = await db.insert(msgs).values({
+          senderId: req.userId!,
+          recipientId: student?.userId!,
+          content,
+          type: "reschedule_approved",
+          lessonId: lesson.id,
+        }).returning();
+
+        const io = req.app.get("io");
+        if (io && msg) {
+          io.emit("new_message", { message: msg, recipientId: student?.userId! });
+        }
+
+        // Send email notification
+        try {
+          if (student?.userId) {
+            const [studentUser] = await db.select().from(users).where(eq(users.id, student.userId)).limit(1);
+            if (studentUser?.email) {
+              await sendNewMessageEmail(studentUser.email, "Instructors", content);
+            }
+          }
+        } catch (mailErr) {
+          console.error("Email notification error:", mailErr);
+        }
+      }
     }
 
     const io = req.app.get("io");

@@ -469,9 +469,9 @@ export function InstructorCalendar() {
   const moveStartYRef = useRef<number>(0);
   const moveStartSlotRef = useRef<{ startTime: string; endTime: string } | null>(null);
 
+  const moveHasLessonRef = useRef(false);
+
   const handleSlotMoveDown = useCallback((e: React.MouseEvent, slot: Slot) => {
-    // Only allow move for unbooked slots
-    if (slot.lesson) return;
     e.preventDefault();
     e.stopPropagation();
     const draft = { startTime: slot.time, endTime: slot.endTime, slotId: slot.id };
@@ -480,6 +480,7 @@ export function InstructorCalendar() {
     moveDraftRef.current = draft;
     moveStartYRef.current = e.clientY;
     moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime };
+    moveHasLessonRef.current = !!slot.lesson;
   }, []);
 
   useEffect(() => {
@@ -516,6 +517,16 @@ export function InstructorCalendar() {
       const draft = moveDraftRef.current;
       const orig = moveStartSlotRef.current;
       if (draft && orig && (draft.startTime !== orig.startTime || draft.endTime !== orig.endTime)) {
+        if (moveHasLessonRef.current) {
+          if (!confirm("This will reschedule the lesson for the student. Continue?")) {
+            // Cancelled — snap back
+            setMovingSlotId(null);
+            setMoveDraft(null);
+            moveDraftRef.current = null;
+            moveStartSlotRef.current = null;
+            return;
+          }
+        }
         movePatchSentRef.current = true;
         const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
           method: "PATCH",
@@ -628,7 +639,7 @@ export function InstructorCalendar() {
                       const sTop = timeToY(sTime);
                       const sHeight = timeToY(eTime) - sTop;
                       const pending = isPendingReschedule(slot.lesson);
-                      const canMove = !slot.lesson && slot.isAvailable;
+                      const canMove = slot.isAvailable || !!slot.lesson; // allow moving booked slots too
                       return (
                         <div
                           key={slot.id}
@@ -663,8 +674,8 @@ export function InstructorCalendar() {
                                 : canMove
                                   ? "bg-white/80 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 cursor-grab active:cursor-grabbing"
                                   : "bg-white/80 border-emerald-200"
-                              : "bg-blue-100 border-blue-200 hover:bg-blue-200",
-                            slot.lesson && !pending && "cursor-pointer hover:shadow-sm"
+                              : "bg-blue-100 border-blue-200 hover:bg-blue-200 cursor-grab active:cursor-grabbing",
+                            slot.lesson && !pending && "hover:shadow-sm"
                           )}
                           style={{ top: sTop, height: sHeight }}
                         >
