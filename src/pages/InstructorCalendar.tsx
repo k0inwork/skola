@@ -266,7 +266,7 @@ export function InstructorCalendar() {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(`Copied ${data.copied} day(s) to next week`);
+        alert(`Copied ${data.copied} slot(s) to next week`);
         fetchCalendarData();
       } else {
         const data = await res.json();
