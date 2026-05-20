@@ -638,7 +638,7 @@ export function InstructorCalendar() {
                     ))}
 
                     {/* Slot blocks — individually draggable/resizable */}
-                    {isWork && slotList.map((slot, idx) => {
+                    {isWork && slotList.map((slot) => {
                       const isMoving = movingSlotId === slot.id;
                       const draft = isMoving ? moveDraft : null;
                       const sTime = draft ? draft.startTime : slot.time;
@@ -649,7 +649,7 @@ export function InstructorCalendar() {
                       const canMove = !slot.lesson && slot.isAvailable;
                       return (
                         <div
-                          key={idx}
+                          key={slot.id}
                           draggable={!!slot.lesson && !pending}
                           onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
                           onDrop={(e) => handleDrop(e, slot)}
