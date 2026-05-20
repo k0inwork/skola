@@ -470,6 +470,7 @@ export function InstructorCalendar() {
   const moveStartSlotRef = useRef<{ startTime: string; endTime: string } | null>(null);
 
   const moveHasLessonRef = useRef(false);
+  const moveSlotDateRef = useRef<string>("");
 
   const handleSlotMoveDown = useCallback((e: React.MouseEvent, slot: Slot) => {
     e.preventDefault();
@@ -481,6 +482,7 @@ export function InstructorCalendar() {
     moveStartYRef.current = e.clientY;
     moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime };
     moveHasLessonRef.current = !!slot.lesson;
+    moveSlotDateRef.current = slot.date;
   }, []);
 
   useEffect(() => {
@@ -518,29 +520,81 @@ export function InstructorCalendar() {
       const orig = moveStartSlotRef.current;
       if (draft && orig && (draft.startTime !== orig.startTime || draft.endTime !== orig.endTime)) {
         if (moveHasLessonRef.current) {
-          if (!confirm("This will reschedule the lesson for the student. Continue?")) {
-            // Cancelled — snap back
+          // Check if there's a free slot at the drop position
+          const targetSlot = dbSlots.find(s =>
+            s.date === moveSlotDateRef.current &&
+            s.time === draft.startTime &&
+            s.endTime === draft.endTime &&
+            s.isAvailable &&
+            s.id !== draft.slotId
+          );
+
+          if (targetSlot) {
+            // Reschedule lesson to the target free slot
+            if (!confirm("This will reschedule the lesson for the student. Continue?")) {
+              setMovingSlotId(null);
+              setMoveDraft(null);
+              moveDraftRef.current = null;
+              moveStartSlotRef.current = null;
+              return;
+            }
+            movePatchSentRef.current = true;
+            const slot = dbSlots.find(s => s.id === draft.slotId);
+            const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ targetSlotId: targetSlot.id })
+            });
+            if (res.ok) {
+              fetchCalendarData();
+            } else {
+              const data = await res.json();
+              alert(data.error || "Reschedule failed");
+              setMovingSlotId(null);
+              setMoveDraft(null);
+              moveDraftRef.current = null;
+              moveStartSlotRef.current = null;
+            }
+          } else {
+            // No free slot at drop position — just move slot + lesson time in place
+            if (!confirm("This will reschedule the lesson for the student. Continue?")) {
+              setMovingSlotId(null);
+              setMoveDraft(null);
+              moveDraftRef.current = null;
+              moveStartSlotRef.current = null;
+              return;
+            }
+            movePatchSentRef.current = true;
+            const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
+            });
+            if (res.ok) {
+              fetchCalendarData();
+            } else {
+              setMovingSlotId(null);
+              setMoveDraft(null);
+              moveDraftRef.current = null;
+              moveStartSlotRef.current = null;
+            }
+          }
+        } else {
+          // Free slot — just PATCH time
+          movePatchSentRef.current = true;
+          const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
+          });
+          if (res.ok) {
+            fetchCalendarData();
+          } else {
             setMovingSlotId(null);
             setMoveDraft(null);
             moveDraftRef.current = null;
             moveStartSlotRef.current = null;
-            return;
           }
-        }
-        movePatchSentRef.current = true;
-        const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
-        });
-        if (res.ok) {
-          fetchCalendarData();
-        } else {
-          // Failed — clear draft so slot snaps back
-          setMovingSlotId(null);
-          setMoveDraft(null);
-          moveDraftRef.current = null;
-          moveStartSlotRef.current = null;
         }
       } else {
         // No movement — clear immediately
