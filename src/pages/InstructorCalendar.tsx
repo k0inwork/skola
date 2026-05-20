@@ -562,27 +562,31 @@ export function InstructorCalendar() {
         return;
       }
 
+      // Snapshot values before clearing draft
+      const slotId = draft.slotId;
+      const newStart = draft.startTime;
+      const newEnd = draft.endTime;
+      const newDate = draft.date;
+
+      // Clear visual draft immediately so slot doesn't stick to cursor
+      setMovingSlotId(null);
+      setMoveDraft(null);
+      moveDraftRef.current = null;
+      moveStartSlotRef.current = null;
+
       if (moveHasLessonRef.current) {
         // Check if there's a free slot at the exact drop position
         const targetSlot = dbSlots.find(s =>
-          s.date === draft.date &&
-          s.time === draft.startTime &&
-          s.endTime === draft.endTime &&
+          s.date === newDate &&
+          s.time === newStart &&
+          s.endTime === newEnd &&
           s.isAvailable &&
-          s.id !== draft.slotId
+          s.id !== slotId
         );
 
         if (targetSlot) {
-          // Drop on free slot → reschedule lesson (free old slot, book new)
-          if (!confirm("Reschedule this lesson? Student will be notified.")) {
-            setMovingSlotId(null);
-            setMoveDraft(null);
-            moveDraftRef.current = null;
-            moveStartSlotRef.current = null;
-            return;
-          }
-          movePatchSentRef.current = true;
-          const slot = dbSlots.find(s => s.id === draft.slotId);
+          if (!confirm("Reschedule this lesson? Student will be notified.")) return;
+          const slot = dbSlots.find(s => s.id === slotId);
           const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -593,56 +597,34 @@ export function InstructorCalendar() {
           } else {
             const data = await res.json();
             alert(data.error || "Reschedule failed");
-            setMovingSlotId(null);
-            setMoveDraft(null);
-            moveDraftRef.current = null;
-            moveStartSlotRef.current = null;
-            movePatchSentRef.current = false;
           }
         } else {
-          // Drop on empty space → move slot + lesson time (and date if crossed days)
-          if (!confirm("Reschedule this lesson? Student will be notified.")) {
-            setMovingSlotId(null);
-            setMoveDraft(null);
-            moveDraftRef.current = null;
-            moveStartSlotRef.current = null;
-            return;
-          }
-          movePatchSentRef.current = true;
-          const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
+          if (!confirm("Reschedule this lesson? Student will be notified.")) return;
+          const res = await fetch(`/api/calendar/slots/${slotId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime, date: draft.date })
+            body: JSON.stringify({ startTime: newStart, endTime: newEnd, date: newDate })
           });
           if (res.ok) {
             fetchCalendarData();
           } else {
             const data = await res.json().catch(() => ({}));
             alert(data.error || "Failed to move slot");
-            setMovingSlotId(null);
-            setMoveDraft(null);
-            moveDraftRef.current = null;
-            moveStartSlotRef.current = null;
-            movePatchSentRef.current = false;
           }
         }
       } else {
         // Free slot — just PATCH time + date
         movePatchSentRef.current = true;
-        const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
+        const res = await fetch(`/api/calendar/slots/${slotId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime, date: draft.date })
+          body: JSON.stringify({ startTime: newStart, endTime: newEnd, date: newDate })
         });
         if (res.ok) {
           fetchCalendarData();
         } else {
           const data = await res.json().catch(() => ({}));
           alert(data.error || "Failed to move slot");
-          setMovingSlotId(null);
-          setMoveDraft(null);
-          moveDraftRef.current = null;
-          moveStartSlotRef.current = null;
           movePatchSentRef.current = false;
         }
       }

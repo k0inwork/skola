@@ -192,14 +192,29 @@ router.post("/:messageId/respond", async (req, res) => {
 
     if (action === "approve" && originalMsg.type === "reschedule_request" && originalMsg.lessonId) {
       // Reschedule the lesson
+      const [oldLesson] = await db.select().from(lessons).where(eq(lessons.id, originalMsg.lessonId)).limit(1);
+      const oldDate = oldLesson?.date;
+
       await db.update(lessons)
         .set({
           date: originalMsg.proposedDate!,
           startTime: originalMsg.proposedStartTime!,
           endTime: originalMsg.proposedEndTime!,
           status: "rescheduled",
+          proposedDate: null,
+          proposedStartTime: null,
+          proposedEndTime: null,
         })
         .where(eq(lessons.id, originalMsg.lessonId));
+
+      // Emit calendar update for both old and new dates
+      const io = req.app.get("io");
+      if (io && oldLesson) {
+        io.emit("calendar_update", { instructorId: oldLesson.instructorId, date: oldDate });
+        if (oldDate !== originalMsg.proposedDate) {
+          io.emit("calendar_update", { instructorId: oldLesson.instructorId, date: originalMsg.proposedDate });
+        }
+      }
     }
 
     // Send response message
