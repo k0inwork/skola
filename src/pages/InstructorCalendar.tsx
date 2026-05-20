@@ -638,6 +638,11 @@ export function InstructorCalendar() {
                           onDragOver={handleDragOver}
                           onMouseDown={(e) => canMove && handleSlotMoveDown(e, slot)}
                           onDoubleClick={() => {
+                            // Cancel any drag started by the mousedowns
+                            setMovingSlotId(null);
+                            setMoveDraft(null);
+                            moveDraftRef.current = null;
+                            moveStartSlotRef.current = null;
                             if (canMove) {
                               if (confirm(`Delete slot ${slot.time}–${slot.endTime}?`)) {
                                 fetch(`/api/calendar/slots/${slot.id}`, {
