@@ -904,11 +904,11 @@ router.post("/copy-week", async (req, res) => {
   }
 });
 
-// Move a slot (update start/end time)
+// Move a slot (update start/end time, optionally date)
 router.patch("/slots/:slotId", async (req, res) => {
   try {
     const { slotId } = req.params;
-    const { startTime, endTime } = req.body;
+    const { startTime, endTime, date } = req.body;
 
     if (!startTime || !endTime) {
       res.status(400).json({ error: "startTime and endTime required" });
@@ -926,7 +926,9 @@ router.patch("/slots/:slotId", async (req, res) => {
       return;
     }
 
-    // Check for overlap with other slots on the same day
+    const targetDate = date || slot.date;
+
+    // Check for overlap with other slots on the target day
     const [newSH, newSM] = startTime.split(":").map(Number);
     const [newEH, newEM] = endTime.split(":").map(Number);
     const newStartMin = newSH * 60 + newSM;
@@ -934,7 +936,7 @@ router.patch("/slots/:slotId", async (req, res) => {
 
     const daySlots = await db.select().from(slots).where(and(
       eq(slots.instructorId, slot.instructorId),
-      eq(slots.date, slot.date),
+      eq(slots.date, targetDate),
       ne(slots.id, slotId)
     ));
 
@@ -949,13 +951,13 @@ router.patch("/slots/:slotId", async (req, res) => {
       }
     }
 
-    await db.update(slots).set({ startTime, endTime, updatedAt: new Date() }).where(eq(slots.id, slotId));
+    await db.update(slots).set({ startTime, endTime, date: targetDate, updatedAt: new Date() }).where(eq(slots.id, slotId));
 
     // If booked, also update the lesson and notify student
     if (slot.isBooked && slot.lessonId) {
       const [lesson] = await db.select().from(lessons).where(eq(lessons.id, slot.lessonId)).limit(1);
       await db.update(lessons)
-        .set({ startTime, endTime, status: "rescheduled" })
+        .set({ startTime, endTime, date: targetDate, status: "rescheduled" })
         .where(eq(lessons.id, slot.lessonId));
 
       // Notify student via message
@@ -963,7 +965,7 @@ router.patch("/slots/:slotId", async (req, res) => {
         const { messages: msgs } = await import("../db/schema.js");
         const [student] = await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1);
         const oldTime = `${lesson.date} (${lesson.startTime}-${lesson.endTime})`;
-        const newTime = `${slot.date} (${startTime}-${endTime})`;
+        const newTime = `${targetDate} (${startTime}-${endTime})`;
         const content = `Lesson rescheduled by Instructor: ${oldTime} → ${newTime}`;
 
         const [msg] = await db.insert(msgs).values({

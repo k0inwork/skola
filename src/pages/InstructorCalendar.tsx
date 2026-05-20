@@ -462,57 +462,76 @@ export function InstructorCalendar() {
     return `${String(Math.max(GRID_START_HOUR, Math.min(h, GRID_END_HOUR))).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  // Slot move drag state — drag whole slot up/down, duration preserved
+  // Slot move drag state — drag whole slot up/down AND across days
   const [movingSlotId, setMovingSlotId] = useState<string | null>(null);
-  const [moveDraft, setMoveDraft] = useState<{ startTime: string; endTime: string; slotId: string } | null>(null);
+  const [moveDraft, setMoveDraft] = useState<{ startTime: string; endTime: string; slotId: string; date: string } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const moveDraftRef = useRef<{ startTime: string; endTime: string; slotId: string } | null>(null);
+  const moveDraftRef = useRef<{ startTime: string; endTime: string; slotId: string; date: string } | null>(null);
   const moveStartYRef = useRef<number>(0);
-  const moveStartSlotRef = useRef<{ startTime: string; endTime: string } | null>(null);
+  const moveStartXRef = useRef<number>(0);
+  const moveStartSlotRef = useRef<{ startTime: string; endTime: string; date: string } | null>(null);
 
   const moveHasLessonRef = useRef(false);
-  const moveSlotDateRef = useRef<string>("");
   const moveJustFinishedRef = useRef(false);
 
   const handleSlotMoveDown = useCallback((e: React.MouseEvent, slot: Slot) => {
     e.preventDefault();
     e.stopPropagation();
-    const draft = { startTime: slot.time, endTime: slot.endTime, slotId: slot.id };
+    const draft = { startTime: slot.time, endTime: slot.endTime, slotId: slot.id, date: slot.date };
     setMovingSlotId(slot.id);
     setMoveDraft(draft);
     moveDraftRef.current = draft;
     moveStartYRef.current = e.clientY;
-    moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime };
+    moveStartXRef.current = e.clientX;
+    moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime, date: slot.date };
     moveHasLessonRef.current = !!slot.lesson;
-    moveSlotDateRef.current = slot.date;
   }, []);
 
   useEffect(() => {
     if (!movingSlotId) return;
 
+    // Build a map of day column rects for hit-testing X position
+    const getDayColumns = () => {
+      if (!gridRef.current) return [];
+      const cols: { date: string; left: number; right: number }[] = [];
+      weekDays.forEach(d => {
+        const dateStr = format(d, "yyyy-MM-dd");
+        const el = gridRef.current!.querySelector(`[data-grid-date="${dateStr}"]`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          cols.push({ date: dateStr, left: rect.left, right: rect.right });
+        }
+      });
+      return cols;
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!gridRef.current || !moveStartSlotRef.current) return;
 
-      const draftSlot = dbSlots.find(s => s.id === movingSlotId);
-      if (!draftSlot) return;
-
-      const gridBody = gridRef.current.querySelector(`[data-grid-date="${draftSlot.date}"]`);
-      if (!gridBody) return;
-
-      // Calculate offset from where drag started
-      const deltaY = e.clientY - moveStartYRef.current;
-      const deltaMin = Math.round((deltaY / HOUR_HEIGHT) * 60 / 15) * 15; // snap to 15min
-
-      const [sH, sM] = moveStartSlotRef.current.startTime.split(":").map(Number);
-      const [eH, eM] = moveStartSlotRef.current.endTime.split(":").map(Number);
+      const orig = moveStartSlotRef.current;
+      const [sH, sM] = orig.startTime.split(":").map(Number);
+      const [eH, eM] = orig.endTime.split(":").map(Number);
       const duration = (eH * 60 + eM) - (sH * 60 + sM);
+
+      // Vertical: time offset
+      const deltaY = e.clientY - moveStartYRef.current;
+      const deltaMin = Math.round((deltaY / HOUR_HEIGHT) * 60 / 15) * 15;
       const newStartMin = Math.max(GRID_START_HOUR * 60, sH * 60 + sM + deltaMin);
       const newEndMin = Math.min(GRID_END_HOUR * 60, newStartMin + duration);
-
       const newStart = `${String(Math.floor(newStartMin / 60)).padStart(2, "0")}:${String(newStartMin % 60).padStart(2, "0")}`;
       const newEnd = `${String(Math.floor(newEndMin / 60)).padStart(2, "0")}:${String(newEndMin % 60).padStart(2, "0")}`;
 
-      const next = { startTime: newStart, endTime: newEnd, slotId: movingSlotId };
+      // Horizontal: detect day column under cursor
+      const dayCols = getDayColumns();
+      let targetDate = orig.date;
+      for (const col of dayCols) {
+        if (e.clientX >= col.left && e.clientX <= col.right) {
+          targetDate = col.date;
+          break;
+        }
+      }
+
+      const next = { startTime: newStart, endTime: newEnd, slotId: movingSlotId, date: targetDate };
       moveDraftRef.current = next;
       setMoveDraft(next);
     };
@@ -523,78 +542,77 @@ export function InstructorCalendar() {
       moveJustFinishedRef.current = true;
       setTimeout(() => { moveJustFinishedRef.current = false; }, 100);
 
-      if (draft && orig && (draft.startTime !== orig.startTime || draft.endTime !== orig.endTime)) {
-        if (moveHasLessonRef.current) {
-          // Check if there's a free slot at the drop position
-          const targetSlot = dbSlots.find(s =>
-            s.date === moveSlotDateRef.current &&
-            s.time === draft.startTime &&
-            s.endTime === draft.endTime &&
-            s.isAvailable &&
-            s.id !== draft.slotId
-          );
+      if (!draft || !orig) {
+        setMovingSlotId(null);
+        setMoveDraft(null);
+        moveDraftRef.current = null;
+        moveStartSlotRef.current = null;
+        return;
+      }
 
-          if (targetSlot) {
-            // Reschedule lesson to the target free slot
-            if (!confirm("Reschedule this lesson? Student will be notified.")) {
-              setMovingSlotId(null);
-              setMoveDraft(null);
-              moveDraftRef.current = null;
-              moveStartSlotRef.current = null;
-              return;
-            }
-            movePatchSentRef.current = true;
-            const slot = dbSlots.find(s => s.id === draft.slotId);
-            const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ targetSlotId: targetSlot.id })
-            });
-            if (res.ok) {
-              fetchCalendarData();
-            } else {
-              const data = await res.json();
-              alert(data.error || "Reschedule failed");
-              setMovingSlotId(null);
-              setMoveDraft(null);
-              moveDraftRef.current = null;
-              moveStartSlotRef.current = null;
-              movePatchSentRef.current = false;
-            }
+      const timeChanged = draft.startTime !== orig.startTime || draft.endTime !== orig.endTime;
+      const dateChanged = draft.date !== orig.date;
+      const moved = timeChanged || dateChanged;
+
+      if (!moved) {
+        setMovingSlotId(null);
+        setMoveDraft(null);
+        moveDraftRef.current = null;
+        moveStartSlotRef.current = null;
+        return;
+      }
+
+      if (moveHasLessonRef.current) {
+        // Check if there's a free slot at the exact drop position
+        const targetSlot = dbSlots.find(s =>
+          s.date === draft.date &&
+          s.time === draft.startTime &&
+          s.endTime === draft.endTime &&
+          s.isAvailable &&
+          s.id !== draft.slotId
+        );
+
+        if (targetSlot) {
+          // Drop on free slot → reschedule lesson (free old slot, book new)
+          if (!confirm("Reschedule this lesson? Student will be notified.")) {
+            setMovingSlotId(null);
+            setMoveDraft(null);
+            moveDraftRef.current = null;
+            moveStartSlotRef.current = null;
+            return;
+          }
+          movePatchSentRef.current = true;
+          const slot = dbSlots.find(s => s.id === draft.slotId);
+          const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ targetSlotId: targetSlot.id })
+          });
+          if (res.ok) {
+            fetchCalendarData();
           } else {
-            // No free slot at drop position — move slot + lesson time in place
-            if (!confirm("Reschedule this lesson? Student will be notified.")) {
-              setMovingSlotId(null);
-              setMoveDraft(null);
-              moveDraftRef.current = null;
-              moveStartSlotRef.current = null;
-              return;
-            }
-            movePatchSentRef.current = true;
-            const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
-            });
-            if (res.ok) {
-              fetchCalendarData();
-            } else {
-              const data = await res.json().catch(() => ({}));
-              alert(data.error || "Failed to move slot");
-              setMovingSlotId(null);
-              setMoveDraft(null);
-              moveDraftRef.current = null;
-              moveStartSlotRef.current = null;
-              movePatchSentRef.current = false;
-            }
+            const data = await res.json();
+            alert(data.error || "Reschedule failed");
+            setMovingSlotId(null);
+            setMoveDraft(null);
+            moveDraftRef.current = null;
+            moveStartSlotRef.current = null;
+            movePatchSentRef.current = false;
           }
         } else {
-          // Free slot — just PATCH time
+          // Drop on empty space → move slot + lesson time (and date if crossed days)
+          if (!confirm("Reschedule this lesson? Student will be notified.")) {
+            setMovingSlotId(null);
+            setMoveDraft(null);
+            moveDraftRef.current = null;
+            moveStartSlotRef.current = null;
+            return;
+          }
           movePatchSentRef.current = true;
           const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime })
+            body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime, date: draft.date })
           });
           if (res.ok) {
             fetchCalendarData();
@@ -609,11 +627,24 @@ export function InstructorCalendar() {
           }
         }
       } else {
-        // No movement — clear immediately
-        setMovingSlotId(null);
-        setMoveDraft(null);
-        moveDraftRef.current = null;
-        moveStartSlotRef.current = null;
+        // Free slot — just PATCH time + date
+        movePatchSentRef.current = true;
+        const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime, date: draft.date })
+        });
+        if (res.ok) {
+          fetchCalendarData();
+        } else {
+          const data = await res.json().catch(() => ({}));
+          alert(data.error || "Failed to move slot");
+          setMovingSlotId(null);
+          setMoveDraft(null);
+          moveDraftRef.current = null;
+          moveStartSlotRef.current = null;
+          movePatchSentRef.current = false;
+        }
       }
     };
 
@@ -700,6 +731,8 @@ export function InstructorCalendar() {
                     {isWork && slotList.map((slot) => {
                       const isMoving = movingSlotId === slot.id;
                       const draft = isMoving ? moveDraft : null;
+                      // Skip rendering in original column if dragged to a different day
+                      if (isMoving && draft && draft.date !== dateStr) return null;
                       const sTime = draft ? draft.startTime : slot.time;
                       const eTime = draft ? draft.endTime : slot.endTime;
                       const sTop = timeToY(sTime);
@@ -713,7 +746,7 @@ export function InstructorCalendar() {
                           onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
                           onDrop={(e) => handleDrop(e, slot)}
                           onDragOver={handleDragOver}
-                          onMouseDown={(e) => canMove && !slot.lesson && handleSlotMoveDown(e, slot)}
+                          onMouseDown={(e) => canMove && handleSlotMoveDown(e, slot)}
                           onDoubleClick={() => {
                             // Cancel any drag started by the mousedowns
                             setMovingSlotId(null);
@@ -763,6 +796,38 @@ export function InstructorCalendar() {
                         </div>
                       );
                     })}
+
+                    {/* Ghost of slot dragged from another day */}
+                    {isWork && moveDraft && moveDraft.date === dateStr && !slotList.some(s => s.id === moveDraft.slotId) && (() => {
+                      const origSlot = dbSlots.find(s => s.id === moveDraft.slotId);
+                      if (!origSlot) return null;
+                      const gTop = timeToY(moveDraft.startTime);
+                      const gHeight = timeToY(moveDraft.endTime) - gTop;
+                      const isBooked = !!origSlot.lesson;
+                      return (
+                        <div
+                          className={clsx(
+                            "absolute left-1.5 right-1.5 rounded border select-none z-20 shadow-lg ring-2 opacity-80",
+                            isBooked ? "bg-blue-100 ring-blue-400 border-blue-200" : "bg-white/80 ring-emerald-400 border-emerald-200"
+                          )}
+                          style={{ top: gTop, height: gHeight }}
+                        >
+                          {origSlot.lesson && (
+                            <div className="px-1.5 py-0.5 text-[9px] leading-tight">
+                              <span className="font-semibold text-gray-800 truncate block">
+                                {origSlot.lesson.studentFirstName} {origSlot.lesson.studentLastName}
+                              </span>
+                              <span className="text-gray-500">{moveDraft.startTime}–{moveDraft.endTime}</span>
+                            </div>
+                          )}
+                          {origSlot.isAvailable && !origSlot.lesson && (
+                            <div className="px-1.5 py-0.5 text-[9px] text-emerald-500 font-medium">
+                              {moveDraft.startTime}–{moveDraft.endTime}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {!isWork && (
                       <div className="absolute inset-0 flex items-center justify-center">
