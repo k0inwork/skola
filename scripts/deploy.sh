@@ -33,7 +33,7 @@ npx drizzle-kit push 2>&1 >> "$LOG" || true
 
 # Restart
 echo "$(date) — restarting" >> "$LOG"
-kill $(lsof -ti:3000) 2>/dev/null || true
+kill $(lsof -ti:3000 -c node) 2>/dev/null || true
 sleep 1
 cd "$SKOLA_DIR"
 nohup env NODE_ENV=production node dist/server.cjs > "$LOGDIR/server.log" 2>&1 &
