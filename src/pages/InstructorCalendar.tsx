@@ -534,7 +534,14 @@ export function InstructorCalendar() {
           );
 
           if (targetSlot) {
-            // Reschedule lesson to the target free slot — no confirm, just do it
+            // Reschedule lesson to the target free slot
+            if (!confirm("Reschedule this lesson? Student will be notified.")) {
+              setMovingSlotId(null);
+              setMoveDraft(null);
+              moveDraftRef.current = null;
+              moveStartSlotRef.current = null;
+              return;
+            }
             movePatchSentRef.current = true;
             const slot = dbSlots.find(s => s.id === draft.slotId);
             const res = await fetch(`/api/calendar/reschedule-lesson/${slot!.lesson!.id}`, {
@@ -555,6 +562,13 @@ export function InstructorCalendar() {
             }
           } else {
             // No free slot at drop position — move slot + lesson time in place
+            if (!confirm("Reschedule this lesson? Student will be notified.")) {
+              setMovingSlotId(null);
+              setMoveDraft(null);
+              moveDraftRef.current = null;
+              moveStartSlotRef.current = null;
+              return;
+            }
             movePatchSentRef.current = true;
             const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
               method: "PATCH",
