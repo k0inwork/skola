@@ -5,7 +5,6 @@ import { instructorWorkingDays, lessons, users, students, enrollments, slots } f
 import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendNewMessageEmail } from "../lib/mail.js";
-import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "../lib/google-calendar.js";
 
 const router = Router();
 
@@ -319,31 +318,6 @@ router.post("/book", async (req, res) => {
       .set({ isBooked: true, lessonId: lesson.id })
       .where(eq(slots.id, slotId));
 
-    // Sync to Google Calendar (instructor)
-    try {
-      const [studentRow] = await db.select().from(students).where(eq(students.id, studentId)).limit(1);
-      const studentName = studentRow ? `${studentRow.firstName} ${studentRow.lastName}` : "Student";
-      const startISO = `${slot.date}T${slot.startTime}:00`;
-      const endISO = `${slot.date}T${slot.endTime}:00`;
-      const [studentUser] = studentRow?.userId
-        ? await db.select().from(users).where(eq(users.id, studentRow.userId)).limit(1)
-        : [null];
-
-      const gEventId = await createCalendarEvent(instructorId, {
-        summary: `Braukšanas mācība — ${studentName}`,
-        startTime: startISO,
-        endTime: endISO,
-        location: undefined,
-        attendeeEmail: studentUser?.email || undefined,
-      });
-
-      if (gEventId) {
-        await db.update(lessons).set({ googleEventId: gEventId }).where(eq(lessons.id, lesson.id));
-      }
-    } catch (calErr) {
-      console.error("Google Calendar sync error (book):", calErr);
-    }
-
     const io = req.app.get("io");
     if (io) {
       io.emit("calendar_update", { instructorId, date: slot.date });
@@ -438,15 +412,6 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
     await db.update(slots)
       .set({ isBooked: false, lessonId: null })
       .where(eq(slots.lessonId, lessonId));
-
-    // Delete Google Calendar event
-    if (lesson.googleEventId) {
-      try {
-        await deleteCalendarEvent(lesson.instructorId, lesson.googleEventId);
-      } catch (calErr) {
-        console.error("Google Calendar sync error (cancel):", calErr);
-      }
-    }
 
     const { messages: msgs } = await import("../db/schema.js");
     const [student] = lesson.studentId
@@ -607,25 +572,6 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
       await db.update(lessons)
         .set({ date: newDate, startTime: targetSlot.startTime, endTime: targetSlot.endTime, status: "rescheduled" })
         .where(eq(lessons.id, lessonId));
-
-      // Sync Google Calendar
-      try {
-        if (lesson.googleEventId) {
-          const startISO = `${newDate}T${targetSlot.startTime}:00`;
-          const endISO = `${newDate}T${targetSlot.endTime}:00`;
-          const [studentRow] = lesson.studentId
-            ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
-            : [null];
-          const studentName = studentRow ? `${studentRow.firstName} ${studentRow.lastName}` : "Student";
-          await updateCalendarEvent(lesson.instructorId, lesson.googleEventId, {
-            summary: `Braukšanas mācība — ${studentName}`,
-            startTime: startISO,
-            endTime: endISO,
-          });
-        }
-      } catch (calErr) {
-        console.error("Google Calendar sync error (reschedule):", calErr);
-      }
 
       const [student] = lesson.studentId
         ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
@@ -1005,30 +951,11 @@ router.patch("/slots/:slotId", async (req, res) => {
 
     await db.update(slots).set({ startTime, endTime, updatedAt: new Date() }).where(eq(slots.id, slotId));
 
-    // If booked, also update the lesson + Google Calendar
+    // If booked, also update the lesson
     if (slot.isBooked && slot.lessonId) {
       await db.update(lessons)
         .set({ startTime, endTime })
         .where(eq(lessons.id, slot.lessonId));
-
-      try {
-        const [lesson] = await db.select().from(lessons).where(eq(lessons.id, slot.lessonId)).limit(1);
-        if (lesson?.googleEventId) {
-          const startISO = `${slot.date}T${startTime}:00`;
-          const endISO = `${slot.date}T${endTime}:00`;
-          const [studentRow] = lesson.studentId
-            ? await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1)
-            : [null];
-          const studentName = studentRow ? `${studentRow.firstName} ${studentRow.lastName}` : "Student";
-          await updateCalendarEvent(slot.instructorId, lesson.googleEventId, {
-            summary: `Braukšanas mācība — ${studentName}`,
-            startTime: startISO,
-            endTime: endISO,
-          });
-        }
-      } catch (calErr) {
-        console.error("Google Calendar sync error (move slot):", calErr);
-      }
     }
 
     const io = req.app.get("io");
