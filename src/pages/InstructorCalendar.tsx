@@ -468,8 +468,6 @@ export function InstructorCalendar() {
   const moveDraftRef = useRef<{ startTime: string; endTime: string; slotId: string } | null>(null);
   const moveStartYRef = useRef<number>(0);
   const moveStartSlotRef = useRef<{ startTime: string; endTime: string } | null>(null);
-  const moveDragStartedRef = useRef(false); // only true after mouse moves enough
-  const DRAG_THRESHOLD = 5; // px before drag starts
 
   const handleSlotMoveDown = useCallback((e: React.MouseEvent, slot: Slot) => {
     // Only allow move for unbooked slots
@@ -477,11 +475,11 @@ export function InstructorCalendar() {
     e.preventDefault();
     e.stopPropagation();
     const draft = { startTime: slot.time, endTime: slot.endTime, slotId: slot.id };
+    setMovingSlotId(slot.id);
+    setMoveDraft(draft);
     moveDraftRef.current = draft;
     moveStartYRef.current = e.clientY;
     moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime };
-    moveDragStartedRef.current = false;
-    // Don't set movingSlotId yet — wait for drag threshold
   }, []);
 
   useEffect(() => {
@@ -489,16 +487,6 @@ export function InstructorCalendar() {
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!gridRef.current || !moveStartSlotRef.current) return;
-
-      // Check drag threshold
-      if (!moveDragStartedRef.current) {
-        const dist = Math.abs(e.clientY - moveStartYRef.current);
-        if (dist < DRAG_THRESHOLD) return;
-        // Threshold crossed — start the drag visually
-        moveDragStartedRef.current = true;
-        setMovingSlotId(moveDraftRef.current!.slotId);
-        setMoveDraft(moveDraftRef.current);
-      }
 
       const draftSlot = dbSlots.find(s => s.id === movingSlotId);
       if (!draftSlot) return;
@@ -525,12 +513,6 @@ export function InstructorCalendar() {
     };
 
     const handleMouseUp = async () => {
-      // If drag never started (below threshold), just clean up
-      if (!moveDragStartedRef.current) {
-        moveDraftRef.current = null;
-        moveStartSlotRef.current = null;
-        return;
-      }
       const draft = moveDraftRef.current;
       const orig = moveStartSlotRef.current;
       if (draft && orig && (draft.startTime !== orig.startTime || draft.endTime !== orig.endTime)) {
