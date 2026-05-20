@@ -105,8 +105,8 @@ export function Layout() {
     { to: "/profile", icon: UserIcon, label: "Profile", match: location.pathname === "/profile" },
   ];
 
-  const renderBadge = (count: number, isMatch: boolean, small?: boolean) => {
-    if (!count || count <= 0 || isMatch) return null;
+  const renderBadge = (count: number, _isMatch: boolean, small?: boolean) => {
+    if (!count || count <= 0) return null;
     return (
       <span className={clsx(
         "bg-blue-600 text-white font-bold rounded-full flex items-center justify-center leading-none",

@@ -162,7 +162,13 @@ router.get("/google/callback", async (req, res) => {
     });
 
     const appUrl = config.APP_URL || "/";
-    const params = new URLSearchParams({ accessToken, refreshToken, role: user.role });
+    const params = new URLSearchParams({
+      accessToken,
+      refreshToken,
+      role: user.role,
+      name: userInfo.given_name || userInfo.name || "",
+      picture: userInfo.picture || "",
+    });
     res.redirect(`${appUrl}/oauth-callback?${params.toString()}`);
   } catch (err) {
     console.error("Google OAuth error:", err);
