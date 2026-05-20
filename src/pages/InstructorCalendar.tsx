@@ -461,72 +461,61 @@ export function InstructorCalendar() {
     return `${String(Math.max(GRID_START_HOUR, Math.min(h, GRID_END_HOUR))).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   };
 
-  // Slot resize drag state — each slot individually movable
-  const [resizingSlotId, setResizingSlotId] = useState<string | null>(null);
-  const [resizingEdge, setResizingEdge] = useState<"top" | "bottom" | null>(null);
-  const [resizeDraft, setResizeDraft] = useState<{ startTime: string; endTime: string; slotId: string } | null>(null);
+  // Slot move drag state — drag whole slot up/down, duration preserved
+  const [movingSlotId, setMovingSlotId] = useState<string | null>(null);
+  const [moveDraft, setMoveDraft] = useState<{ startTime: string; endTime: string; slotId: string } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-  const resizeDraftRef = useRef<{ startTime: string; endTime: string; slotId: string } | null>(null);
+  const moveDraftRef = useRef<{ startTime: string; endTime: string; slotId: string } | null>(null);
+  const moveStartYRef = useRef<number>(0);
+  const moveStartSlotRef = useRef<{ startTime: string; endTime: string } | null>(null);
 
-  const handleSlotResizeDown = useCallback((e: React.MouseEvent, slot: Slot, edge: "top" | "bottom") => {
+  const handleSlotMoveDown = useCallback((e: React.MouseEvent, slot: Slot) => {
+    // Only allow move for unbooked slots
+    if (slot.lesson) return;
     e.preventDefault();
     e.stopPropagation();
     const draft = { startTime: slot.time, endTime: slot.endTime, slotId: slot.id };
-    setResizingSlotId(slot.id);
-    setResizingEdge(edge);
-    setResizeDraft(draft);
-    resizeDraftRef.current = draft;
+    setMovingSlotId(slot.id);
+    setMoveDraft(draft);
+    moveDraftRef.current = draft;
+    moveStartYRef.current = e.clientY;
+    moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime };
   }, []);
 
   useEffect(() => {
-    if (!resizingSlotId || !resizingEdge) return;
+    if (!movingSlotId) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!gridRef.current) return;
-      // Find the grid column for this slot's date
-      const slotData = resizeDraftRef.current;
-      if (!slotData) return;
+      if (!gridRef.current || !moveStartSlotRef.current) return;
 
-      const draftSlot = dbSlots.find(s => s.id === resizingSlotId);
+      const draftSlot = dbSlots.find(s => s.id === movingSlotId);
       if (!draftSlot) return;
 
       const gridBody = gridRef.current.querySelector(`[data-grid-date="${draftSlot.date}"]`);
       if (!gridBody) return;
-      const rect = gridBody.getBoundingClientRect();
-      const y = e.clientY - rect.top;
-      const time = yToTime(y);
 
-      const prev = resizeDraftRef.current;
-      if (!prev) return;
+      // Calculate offset from where drag started
+      const deltaY = e.clientY - moveStartYRef.current;
+      const deltaMin = Math.round((deltaY / HOUR_HEIGHT) * 60 / 15) * 15; // snap to 15min
 
-      let next = prev;
-      if (resizingEdge === "top") {
-        // Moving top edge — start time changes, end stays
-        const [eH, eM] = prev.endTime.split(":").map(Number);
-        const [nH, nM] = time.split(":").map(Number);
-        const newStartMin = nH * 60 + nM;
-        const endMin = eH * 60 + eM;
-        // Min 15min slot, can't go past end
-        if (newStartMin + 15 <= endMin) {
-          next = { ...prev, startTime: time };
-        }
-      } else {
-        // Moving bottom edge — end time changes, start stays
-        const [sH, sM] = prev.startTime.split(":").map(Number);
-        const [nH, nM] = time.split(":").map(Number);
-        const startMin = sH * 60 + sM;
-        const newEndMin = nH * 60 + nM;
-        if (startMin + 15 <= newEndMin) {
-          next = { ...prev, endTime: time };
-        }
-      }
-      resizeDraftRef.current = next;
-      setResizeDraft(next);
+      const [sH, sM] = moveStartSlotRef.current.startTime.split(":").map(Number);
+      const [eH, eM] = moveStartSlotRef.current.endTime.split(":").map(Number);
+      const duration = (eH * 60 + eM) - (sH * 60 + sM);
+      const newStartMin = Math.max(GRID_START_HOUR * 60, sH * 60 + sM + deltaMin);
+      const newEndMin = Math.min(GRID_END_HOUR * 60, newStartMin + duration);
+
+      const newStart = `${String(Math.floor(newStartMin / 60)).padStart(2, "0")}:${String(newStartMin % 60).padStart(2, "0")}`;
+      const newEnd = `${String(Math.floor(newEndMin / 60)).padStart(2, "0")}:${String(newEndMin % 60).padStart(2, "0")}`;
+
+      const next = { startTime: newStart, endTime: newEnd, slotId: movingSlotId };
+      moveDraftRef.current = next;
+      setMoveDraft(next);
     };
 
     const handleMouseUp = async () => {
-      const draft = resizeDraftRef.current;
-      if (draft && draft.slotId) {
+      const draft = moveDraftRef.current;
+      const orig = moveStartSlotRef.current;
+      if (draft && orig && (draft.startTime !== orig.startTime || draft.endTime !== orig.endTime)) {
         const res = await fetch(`/api/calendar/slots/${draft.slotId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -536,10 +525,10 @@ export function InstructorCalendar() {
           fetchCalendarData();
         }
       }
-      setResizingSlotId(null);
-      setResizingEdge(null);
-      setResizeDraft(null);
-      resizeDraftRef.current = null;
+      setMovingSlotId(null);
+      setMoveDraft(null);
+      moveDraftRef.current = null;
+      moveStartSlotRef.current = null;
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -548,7 +537,7 @@ export function InstructorCalendar() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [resizingSlotId, resizingEdge, selectedInstructor, token, dbSlots]);
+  }, [movingSlotId, selectedInstructor, token, dbSlots]);
 
   const renderWeekView = () => {
     const hours = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => GRID_START_HOUR + i);
@@ -630,13 +619,14 @@ export function InstructorCalendar() {
 
                     {/* Slot blocks — individually draggable/resizable */}
                     {isWork && slotList.map((slot, idx) => {
-                      const isResizing = resizingSlotId === slot.id;
-                      const draft = isResizing ? resizeDraft : null;
+                      const isMoving = movingSlotId === slot.id;
+                      const draft = isMoving ? moveDraft : null;
                       const sTime = draft ? draft.startTime : slot.time;
                       const eTime = draft ? draft.endTime : slot.endTime;
                       const sTop = timeToY(sTime);
                       const sHeight = timeToY(eTime) - sTop;
                       const pending = isPendingReschedule(slot.lesson);
+                      const canMove = !slot.lesson && slot.isAvailable;
                       return (
                         <div
                           key={idx}
@@ -644,28 +634,23 @@ export function InstructorCalendar() {
                           onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
                           onDrop={(e) => handleDrop(e, slot)}
                           onDragOver={handleDragOver}
+                          onMouseDown={(e) => canMove && handleSlotMoveDown(e, slot)}
                           onClick={(e) => { e.stopPropagation(); if (slot.lesson && !pending) setSelectedSlot(slot); }}
                           className={clsx(
-                            "absolute left-1.5 right-1.5 rounded cursor-pointer overflow-visible border transition-colors z-10 group/slot",
+                            "absolute left-1.5 right-1.5 rounded border transition-all select-none",
+                            isMoving ? "z-20 shadow-lg ring-2 ring-emerald-400 opacity-80" : "z-10",
                             pending ? "bg-amber-100 border-amber-300" :
                             slot.isAvailable
                               ? draggedLesson
                                 ? "bg-emerald-100 border-emerald-300 hover:bg-emerald-200"
-                                : "bg-white/80 border-emerald-200"
+                                : canMove
+                                  ? "bg-white/80 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 cursor-grab active:cursor-grabbing"
+                                  : "bg-white/80 border-emerald-200"
                               : "bg-blue-100 border-blue-200 hover:bg-blue-200",
-                            slot.lesson && !pending && "hover:shadow-sm"
+                            slot.lesson && !pending && "cursor-pointer hover:shadow-sm"
                           )}
                           style={{ top: sTop, height: sHeight }}
                         >
-                          {/* Top resize handle */}
-                          <div
-                            className="absolute -top-0 left-0 right-0 h-3 z-30 cursor-ns-resize opacity-0 group-hover/slot:opacity-100 transition-opacity"
-                            onMouseDown={(e) => handleSlotResizeDown(e, slot, "top")}
-                          >
-                            <div className="mx-auto w-6 h-1 bg-emerald-400 rounded-full mt-0.5" />
-                          </div>
-
-                          {/* Slot content */}
                           {slot.lesson && (
                             <div className="px-1.5 py-0.5 text-[9px] leading-tight">
                               <span className="font-semibold text-gray-800 truncate block">
@@ -681,14 +666,6 @@ export function InstructorCalendar() {
                               {sTime}–{eTime}
                             </div>
                           )}
-
-                          {/* Bottom resize handle */}
-                          <div
-                            className="absolute -bottom-0 left-0 right-0 h-3 z-30 cursor-ns-resize opacity-0 group-hover/slot:opacity-100 transition-opacity"
-                            onMouseDown={(e) => handleSlotResizeDown(e, slot, "bottom")}
-                          >
-                            <div className="mx-auto w-6 h-1 bg-emerald-400 rounded-full mt-1.5" />
-                          </div>
                         </div>
                       );
                     })}
