@@ -1,8 +1,16 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 
 export function Login() {
   const [error, setError] = useState("");
   const [profile, setProfile] = useState<{ name: string; picture: string } | null>(null);
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("blocked") === "1") {
+      setError("Jūsu konts ir bloķēts. Lūdzu sazinieties ar instruktoru.");
+    }
+  }, []);
 
   useEffect(() => {
     try {

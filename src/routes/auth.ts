@@ -114,6 +114,16 @@ router.get("/google/callback", async (req, res) => {
         });
       }
     } else {
+      // Check if student is blocked
+      if (!isAdmin) {
+        const [studentProfile] = await db.select().from(students).where(eq(students.userId, user.id)).limit(1);
+        if (studentProfile?.status === "blocked") {
+          const appUrl = config.APP_URL || "/";
+          res.redirect(`${appUrl}/login?blocked=1`);
+          return;
+        }
+      }
+
       // Update role if admin list changed
       if (isAdmin && user.role === "client") {
         await db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));

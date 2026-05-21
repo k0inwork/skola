@@ -20,6 +20,7 @@ interface BookedLesson {
   proposedDate?: string | null;
   proposedStartTime?: string | null;
   proposedEndTime?: string | null;
+  createdAt?: string | null;
 }
 
 interface Slot {
@@ -269,6 +270,19 @@ export function StudentCalendar() {
             <p className="text-sm text-gray-500 mb-4">
               {bookingSlot.date} at {bookingSlot.time}–{bookingSlot.endTime}
             </p>
+            {bookingSlot.isMine && bookingSlot.lesson?.createdAt && (() => {
+              const created = new Date(bookingSlot.lesson.createdAt).getTime();
+              const now = Date.now();
+              const hoursSinceBooking = (now - created) / (1000 * 60 * 60);
+              if (hoursSinceBooking < 24) {
+                return (
+                  <div className="p-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+                    Uzmanību! Atceļot mazāk nekā 24 stundas pēc rezervēšanas, var tikt piemērots sods.
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setIsBookingOpen(false)} className="px-4 py-2 text-gray-600">No, go back</button>
               <button

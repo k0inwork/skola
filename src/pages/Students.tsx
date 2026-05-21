@@ -2,7 +2,7 @@ import { useState, useEffect, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
 import { toastSuccess, toastError } from "../lib/notify";
-import { Plus, Search, User as UserIcon, X } from "lucide-react";
+import { Plus, Search, User as UserIcon, X, Ban, ShieldCheck } from "lucide-react";
 
 interface Student {
   id: string;
@@ -81,6 +81,25 @@ export function Students() {
     }
   };
 
+  const handleToggleBlock = async (studentId: string, currentlyBlocked: boolean) => {
+    const newStatus = currentlyBlocked ? "active" : "blocked";
+    try {
+      const res = await fetch(`/api/students/${studentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        toastSuccess(currentlyBlocked ? "Student unblocked" : "Student blocked");
+        fetchStudents();
+      } else {
+        toastError("Failed to update student");
+      }
+    } catch {
+      toastError("Network error");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -88,7 +107,7 @@ export function Students() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Students</h1>
           <p className="mt-1 text-gray-500">Manage your students and their progress.</p>
         </div>
-        <button 
+        <button
           onClick={() => setIsAddModalOpen(true)}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition"
         >
@@ -223,6 +242,7 @@ export function Students() {
                 <th className="font-medium p-4">Contact</th>
                 <th className="font-medium p-4">Status</th>
                 <th className="font-medium p-4">Joined</th>
+                <th className="font-medium p-4"></th>
               </tr>
             </thead>
             <tbody>
@@ -236,7 +256,7 @@ export function Students() {
                 if (filtered.length === 0) {
                   return (
                     <tr>
-                      <td colSpan={4} className="p-8 text-center text-gray-500">
+                      <td colSpan={5} className="p-8 text-center text-gray-500">
                         {searchQuery ? "No results matching your search." : "No students found."}
                       </td>
                     </tr>
@@ -260,12 +280,21 @@ export function Students() {
                       <div className="text-sm text-gray-500">{student.phone || "-"}</div>
                     </td>
                     <td className="p-4">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 capitalize">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${student.status === "blocked" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}`}>
                         {student.status}
                       </span>
                     </td>
                     <td className="p-4 text-sm text-gray-500">
                       {new Date(student.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="p-4 text-right">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleBlock(student.id, student.status === "blocked"); }}
+                        className={`p-1.5 rounded-md transition ${student.status === "blocked" ? "text-green-600 hover:bg-green-50" : "text-gray-400 hover:bg-red-50 hover:text-red-500"}`}
+                        title={student.status === "blocked" ? "Unblock student" : "Block student"}
+                      >
+                        {student.status === "blocked" ? <ShieldCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                      </button>
                     </td>
                   </tr>
                 ));

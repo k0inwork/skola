@@ -265,7 +265,29 @@ router.post("/book", async (req, res) => {
         res.status(400).json({ error: "Student profile not found for this user." });
         return;
       }
+      if (student.status === "blocked") {
+        res.status(403).json({ error: "Your account has been restricted. Please contact your instructor." });
+        return;
+      }
       studentId = student.id;
+
+      // Unpaid students can only book 1 lesson at a time
+      const paidLessons = await db.select({ id: lessons.id }).from(lessons).where(
+        and(eq(lessons.studentId, studentId), eq(lessons.paid, true))
+      ).limit(1);
+      if (paidLessons.length === 0) {
+        const activeBookings = await db.select({ id: slots.id }).from(slots)
+          .leftJoin(lessons, eq(slots.lessonId, lessons.id))
+          .where(and(
+            eq(lessons.studentId, studentId),
+            eq(slots.isBooked, true),
+            ne(lessons.status, "canceled")
+          ));
+        if (activeBookings.length >= 1) {
+          res.status(403).json({ error: "You can only book 1 lesson at a time until your first lesson is paid." });
+          return;
+        }
+      }
     } else if (!studentId) {
       let [firstStudent] = await db.select().from(students).limit(1);
       if (!firstStudent) {
