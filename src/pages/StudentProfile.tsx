@@ -93,8 +93,12 @@ export function StudentProfile() {
                 <input value={profile?.email || ""} readOnly className="w-full border px-3 py-2 rounded-md bg-gray-50 text-gray-500" />
             </div>
         </div>
-        <button 
-          type="submit" 
+        <div>
+            <label className="block text-sm font-medium text-gray-700">Phone</label>
+            <input value={profile?.phone || ""} onChange={e => setProfile({...profile, phone: e.target.value})} className="w-full mt-1 border px-3 py-2 rounded-md" placeholder="+371 ..." />
+        </div>
+        <button
+          type="submit"
           disabled={saving}
           className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition disabled:opacity-50"
         >

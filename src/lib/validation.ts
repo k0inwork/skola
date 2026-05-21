@@ -14,7 +14,7 @@ export const createStudentSchema = z.object({
   language: z.string().max(5).default("lv"),
   contactMethod: z.string().max(20).optional(),
   source: z.string().max(50).optional(),
-  status: z.enum(["lead", "registered", "active", "paused", "completed", "archived"]).default("lead"),
+  status: z.enum(["lead", "registered", "active", "paused", "completed", "archived", "blocked"]).default("lead"),
   notes: z.string().optional(),
   createAccount: z.boolean().optional(),
   password: z.string().min(6).optional().or(z.literal('')),

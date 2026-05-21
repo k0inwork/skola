@@ -270,14 +270,16 @@ export function StudentCalendar() {
             <p className="text-sm text-gray-500 mb-4">
               {bookingSlot.date} at {bookingSlot.time}–{bookingSlot.endTime}
             </p>
-            {bookingSlot.isMine && bookingSlot.lesson?.createdAt && (() => {
-              const created = new Date(bookingSlot.lesson.createdAt).getTime();
+            {bookingSlot.isMine && (() => {
+              const slotDate = bookingSlot.date;
+              const slotTime = bookingSlot.time;
+              const slotStart = new Date(`${slotDate}T${slotTime}`).getTime();
               const now = Date.now();
-              const hoursSinceBooking = (now - created) / (1000 * 60 * 60);
-              if (hoursSinceBooking < 24) {
+              const hoursUntilLesson = (slotStart - now) / (1000 * 60 * 60);
+              if (hoursUntilLesson < 24) {
                 return (
                   <div className="p-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg mb-4">
-                    Uzmanību! Atceļot mazāk nekā 24 stundas pēc rezervēšanas, var tikt piemērots sods.
+                    Uzmanību! Atceļot mazāk nekā 24 stundas pirms nodarbības, var tikt piemērots sods.
                   </div>
                 );
               }
