@@ -172,9 +172,24 @@ router.get("/google/callback", async (req, res) => {
     });
 
     const appUrl = config.APP_URL || "/";
+
+    // Set tokens in short-lived cookies for secure transfer (no URL exposure)
+    res.cookie("oauth_access_token", accessToken, {
+      httpOnly: false, // client needs to read this
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 30000, // 30 seconds — just enough for the redirect
+      path: "/",
+    });
+    res.cookie("oauth_refresh_token", refreshToken, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 30000,
+      path: "/",
+    });
+
     const params = new URLSearchParams({
-      accessToken,
-      refreshToken,
       role: user.role,
       name: userInfo.given_name || userInfo.name || "",
       picture: userInfo.picture || "",

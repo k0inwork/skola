@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, or, desc, sql, ne } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { messages, users, students, lessons } from "../db/schema.js";
+import { messages, users, students, lessons, slots } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendNewMessageEmail } from "../lib/mail.js";
 
@@ -128,6 +128,19 @@ router.post("/", async (req, res) => {
       }
     }
 
+    // Validate target slot for reschedule requests
+    if (type === "reschedule_request" && proposedDate && proposedStartTime) {
+      const [targetSlot] = await db.select().from(slots).where(and(
+        eq(slots.isBooked, false),
+        eq(slots.date, proposedDate),
+        eq(slots.startTime, proposedStartTime)
+      )).limit(1);
+      if (!targetSlot) {
+        res.status(400).json({ error: "No available slot found for the proposed date and time. Please pick a time from the calendar." });
+        return;
+      }
+    }
+
     const [msg] = await db.insert(messages).values({
       senderId: req.userId,
       recipientId,
@@ -191,10 +204,31 @@ router.post("/:messageId/respond", async (req, res) => {
     }
 
     if (action === "approve" && originalMsg.type === "reschedule_request" && originalMsg.lessonId) {
-      // Reschedule the lesson
       const [oldLesson] = await db.select().from(lessons).where(eq(lessons.id, originalMsg.lessonId)).limit(1);
       const oldDate = oldLesson?.date;
 
+      // Free old slot(s)
+      await db.update(slots)
+        .set({ isBooked: false, lessonId: null })
+        .where(and(eq(slots.lessonId, originalMsg.lessonId), eq(slots.isBooked, true)));
+
+      // Find target slot for proposed date/time
+      if (oldLesson) {
+        const [targetSlot] = await db.select().from(slots).where(and(
+          eq(slots.instructorId, oldLesson.instructorId),
+          eq(slots.date, originalMsg.proposedDate!),
+          eq(slots.startTime, originalMsg.proposedStartTime!),
+          eq(slots.isBooked, false)
+        )).limit(1);
+
+        if (targetSlot) {
+          await db.update(slots)
+            .set({ isBooked: true, lessonId: originalMsg.lessonId })
+            .where(eq(slots.id, targetSlot.id));
+        }
+      }
+
+      // Update lesson
       await db.update(lessons)
         .set({
           date: originalMsg.proposedDate!,
@@ -213,6 +247,44 @@ router.post("/:messageId/respond", async (req, res) => {
         io.emit("calendar_update", { instructorId: oldLesson.instructorId, date: oldDate });
         if (oldDate !== originalMsg.proposedDate) {
           io.emit("calendar_update", { instructorId: oldLesson.instructorId, date: originalMsg.proposedDate });
+        }
+      }
+    }
+
+    if (action === "decline" && originalMsg.lessonId) {
+      // If lesson is in reschedule_pending, revert it
+      const [lesson] = await db.select().from(lessons).where(eq(lessons.id, originalMsg.lessonId)).limit(1);
+      if (lesson?.status === "reschedule_pending") {
+        // Free the held target slot
+        await db.update(slots)
+          .set({ isBooked: false, lessonId: null })
+          .where(and(eq(slots.lessonId, originalMsg.lessonId), eq(slots.isBooked, true)));
+
+        // Revert lesson
+        await db.update(lessons)
+          .set({ status: "scheduled", proposedDate: null, proposedStartTime: null, proposedEndTime: null })
+          .where(eq(lessons.id, originalMsg.lessonId));
+
+        // Re-link original slot
+        const [originalSlot] = await db.select().from(slots).where(and(
+          eq(slots.instructorId, lesson.instructorId),
+          eq(slots.date, lesson.date),
+          eq(slots.startTime, lesson.startTime),
+          eq(slots.isBooked, false)
+        )).limit(1);
+
+        if (originalSlot) {
+          await db.update(slots)
+            .set({ isBooked: true, lessonId: originalMsg.lessonId })
+            .where(eq(slots.id, originalSlot.id));
+        }
+
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+          if (lesson.proposedDate && lesson.proposedDate !== lesson.date) {
+            io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.proposedDate });
+          }
         }
       }
     }

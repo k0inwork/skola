@@ -12,6 +12,11 @@ router.use(requireAuth);
 
 router.get("/", async (req, res) => {
   try {
+    // Only instructors/admins can list all students
+    if (req.userRole === "client") {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
     const { search, status, page = "1", limit = "20", sort = "lastName" } = req.query as Record<string, string>;
 
     const conditions = [isNull(students.deletedAt)];

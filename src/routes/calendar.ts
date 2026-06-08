@@ -4,6 +4,7 @@ import { db } from "../db/index.js";
 import { instructorWorkingDays, lessons, users, students, enrollments, slots } from "../db/schema.js";
 import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
+import { validate, bookSlotSchema, rescheduleSchema, respondRescheduleSchema, cancelLessonSchema, updateLessonSchema, moveSlotSchema, workingDaySchema, copyWeekSchema, createLocationSchema } from "../lib/validation.js";
 import { sendNewMessageEmail } from "../lib/mail.js";
 
 const router = Router();
@@ -40,7 +41,7 @@ async function generateSlotsForDay(instructorId: string, date: string) {
     return;
   }
 
-  const slotDuration = 90;
+  const slotDuration = workingDay.slotDurationMin || 90;
   const [startH, startM] = workingDay.startTime.split(":").map(Number);
   const [endH, endM] = workingDay.endTime.split(":").map(Number);
   const workStartMin = startH * 60 + startM;
@@ -104,10 +105,10 @@ router.get("/working-days", async (req, res) => {
 });
 
 // Upsert working day — regenerates slots for that day
-router.post("/working-days", async (req, res) => {
+router.post("/working-days", validate(workingDaySchema), async (req, res) => {
   try {
     const { instructorId, date, isWorking, startTime, endTime } = req.body;
-    const slotDurationMin = 90;
+    const slotDurationMin = req.body.slotDurationMin || 90;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });
@@ -237,7 +238,7 @@ router.get("/slots", async (req, res) => {
 });
 
 // Book a slot by slotId
-router.post("/book", async (req, res) => {
+router.post("/book", validate(bookSlotSchema), async (req, res) => {
   try {
     let { slotId, enrollmentId, studentId, instructorId, durationMin } = req.body;
 
@@ -254,6 +255,16 @@ router.post("/book", async (req, res) => {
     }
     if (slot.isBooked) {
       res.status(409).json({ error: "Slot is already booked." });
+      return;
+    }
+
+    // Atomically claim the slot — prevents double-booking race condition
+    const claimed = await db.update(slots)
+      .set({ isBooked: true })
+      .where(and(eq(slots.id, slotId), eq(slots.isBooked, false)))
+      .returning();
+    if (!claimed.length) {
+      res.status(409).json({ error: "Slot was just booked by someone else." });
       return;
     }
 
@@ -378,7 +389,7 @@ router.post("/mark-lesson-paid", async (req, res) => {
   }
 });
 
-router.post("/update-lesson/:lessonId", async (req, res) => {
+router.post("/update-lesson/:lessonId", validate(updateLessonSchema), async (req, res) => {
   try {
     const { lessonId } = req.params;
     const { notes, location, amount } = req.body;
@@ -404,7 +415,7 @@ router.post("/update-lesson/:lessonId", async (req, res) => {
   }
 });
 
-router.post("/cancel-lesson/:lessonId", async (req, res) => {
+router.post("/cancel-lesson/:lessonId", validate(cancelLessonSchema), async (req, res) => {
   try {
     const { lessonId } = req.params;
     const { reason } = req.body as { reason?: string };
@@ -488,7 +499,7 @@ router.post("/cancel-lesson/:lessonId", async (req, res) => {
 });
 
 // Reschedule — must target an existing free slot
-router.post("/reschedule-lesson/:lessonId", async (req, res) => {
+router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (req, res) => {
   try {
     const { lessonId } = req.params;
     const { targetSlotId } = req.body;
@@ -633,7 +644,7 @@ router.post("/reschedule-lesson/:lessonId", async (req, res) => {
 });
 
 // Instructor approves/declines a pending reschedule
-router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
+router.post("/reschedule-lesson/:lessonId/respond", validate(respondRescheduleSchema), async (req, res) => {
   try {
     const { lessonId } = req.params;
     const { action } = req.body;
@@ -795,6 +806,94 @@ router.post("/reschedule-lesson/:lessonId/respond", async (req, res) => {
   }
 });
 
+// Student cancels their own pending reschedule request
+router.post("/cancel-reschedule/:lessonId", async (req, res) => {
+  try {
+    const { lessonId } = req.params;
+
+    if (req.userRole !== "client") {
+      res.status(403).json({ error: "Only students can cancel pending reschedules" });
+      return;
+    }
+
+    const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
+    if (!lesson) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
+    if (lesson.status !== "reschedule_pending") {
+      res.status(400).json({ error: "Lesson is not pending reschedule" });
+      return;
+    }
+
+    // Verify student owns this lesson
+    const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
+    if (!student || lesson.studentId !== student.id) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const { messages: msgs } = await import("../db/schema.js");
+
+    // Free the held target slot
+    await db.update(slots)
+      .set({ isBooked: false, lessonId: null })
+      .where(and(eq(slots.lessonId, lessonId), eq(slots.isBooked, true)));
+
+    // Revert lesson
+    await db.update(lessons)
+      .set({
+        status: "scheduled",
+        proposedDate: null,
+        proposedStartTime: null,
+        proposedEndTime: null,
+      })
+      .where(eq(lessons.id, lessonId));
+
+    // Re-link original slot
+    const [originalSlot] = await db.select().from(slots).where(and(
+      eq(slots.instructorId, lesson.instructorId),
+      eq(slots.date, lesson.date),
+      eq(slots.startTime, lesson.startTime),
+      eq(slots.isBooked, false)
+    )).limit(1);
+
+    if (originalSlot) {
+      await db.update(slots)
+        .set({ isBooked: true, lessonId: lessonId })
+        .where(eq(slots.id, originalSlot.id));
+    }
+
+    // Notify instructor
+    const [st] = await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1);
+    const studentName = st ? `${st.firstName} ${st.lastName}` : "Student";
+    const content = `${studentName} cancelled their reschedule request for ${lesson.date} (${lesson.startTime}-${lesson.endTime}).`;
+
+    const [msg] = await db.insert(msgs).values({
+      senderId: req.userId!,
+      recipientId: lesson.instructorId,
+      content,
+      type: "lesson_cancelled",
+      lessonId,
+    }).returning();
+
+    const io = req.app.get("io");
+    if (io) {
+      if (msg) io.emit("new_message", { message: msg, recipientId: lesson.instructorId });
+      io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+      if (lesson.proposedDate && lesson.proposedDate !== lesson.date) {
+        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.proposedDate });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Cancel reschedule error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Get recent calendar notifications (for admin/instructor)
 router.get("/notifications", async (req, res) => {
   try {
@@ -853,7 +952,7 @@ router.get("/notifications", async (req, res) => {
 });
 
 // Copy working days from one week to another
-router.post("/copy-week", async (req, res) => {
+router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
   try {
     const { instructorId, sourceWeekStart, targetWeekStart } = req.body as {
       instructorId: string;
@@ -900,12 +999,12 @@ router.post("/copy-week", async (req, res) => {
       ));
       if (existing.length > 0) {
         await db.update(instructorWorkingDays)
-          .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: 90 })
+          .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90 })
           .where(eq(instructorWorkingDays.id, existing[0].id));
       } else {
         await db.insert(instructorWorkingDays).values({
           instructorId, date: newDate, isWorking: day.isWorking,
-          startTime: day.startTime, endTime: day.endTime, slotDurationMin: 90,
+          startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90,
         });
       }
     }
@@ -967,7 +1066,7 @@ router.post("/copy-week", async (req, res) => {
 });
 
 // Move a slot (update start/end time, optionally date)
-router.patch("/slots/:slotId", async (req, res) => {
+router.patch("/slots/:slotId", validate(moveSlotSchema), async (req, res) => {
   try {
     const { slotId } = req.params;
     const { startTime, endTime, date } = req.body;
@@ -1121,7 +1220,7 @@ router.get("/locations", async (req, res) => {
   }
 });
 
-router.post("/locations", async (req, res) => {
+router.post("/locations", validate(createLocationSchema), async (req, res) => {
   try {
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });

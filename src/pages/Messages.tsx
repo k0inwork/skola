@@ -224,7 +224,7 @@ export function Messages() {
   const selectedConv = conversations.find(c => c.partnerId === partnerId);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] -m-8">
+    <div className="flex h-[calc(100vh-7rem)] md:h-[calc(100vh-4rem)] -m-4 md:-m-8">
       {/* Sidebar - Conversations List */}
       <div className={clsx(
         "w-80 bg-white border-r border-gray-200 flex flex-col shrink-0",

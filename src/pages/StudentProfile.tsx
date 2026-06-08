@@ -21,20 +21,20 @@ export function StudentProfile() {
     .then(data => {
         setProfile(data);
         setLoading(false);
+        // Fetch lessons using the profile id
+        if (data?.id) {
+            fetch(`/api/students/${data.id}/lessons`, {
+                headers: { Authorization: `Bearer ${token || ""}` }
+            })
+            .then(res => res.ok ? res.json() : [])
+            .then(ldata => setLessons(ldata))
+            .catch(console.error);
+        }
     })
     .catch(err => {
         console.error(err);
         setLoading(false);
     });
-
-    if (id) {
-        fetch(`/api/students/${id}/lessons`, {
-            headers: { Authorization: `Bearer ${token || ""}` }
-        })
-        .then(res => res.ok ? res.json() : [])
-        .then(data => setLessons(data))
-        .catch(console.error);
-    }
   }, [id, token]);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -70,7 +70,14 @@ export function StudentProfile() {
       }
   };
 
-  if (loading) return <div className="p-8 text-center">Loading profile...</div>;
+  if (loading) return (
+    <div className="max-w-4xl mx-auto p-6 flex items-center justify-center min-h-[300px]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+        <span className="text-sm text-gray-400">Loading profile...</span>
+      </div>
+    </div>
+  );
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-8">
@@ -106,10 +113,10 @@ export function StudentProfile() {
         </button>
       </form>
 
-      {id && (
+      {(id || lessons.length > 0) && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-6">
             <div className="flex justify-between items-center">
-                <h2 className="text-lg font-bold">Lesson History</h2>
+                <h2 className="text-lg font-bold">{id ? "Lesson History" : "My Lessons"}</h2>
                 <div className="text-right">
                     <p className="text-xs text-gray-500 uppercase font-semibold">Total Paid Lessons Value</p>
                     <p className="text-xl font-bold text-emerald-600">
@@ -126,6 +133,7 @@ export function StudentProfile() {
                             <th className="p-3 font-semibold">Date & Time</th>
                             <th className="p-3 font-semibold">Place</th>
                             <th className="p-3 font-semibold">Instructor Comments</th>
+                            <th className="p-3 font-semibold text-center">Amount</th>
                             <th className="p-3 font-semibold text-center">Paid</th>
                         </tr>
                     </thead>
@@ -142,6 +150,9 @@ export function StudentProfile() {
                                 <td className="p-3 text-gray-600 max-w-xs truncate">
                                     {lesson.notes || <span className="text-gray-300 italic">No comments</span>}
                                 </td>
+                                <td className="p-3 text-center text-gray-700 font-medium">
+                                    {lesson.amount ? `${parseFloat(lesson.amount).toFixed(2)} €` : "—"}
+                                </td>
                                 <td className="p-3 text-center">
                                     {lesson.paid 
                                         ? <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold border border-emerald-100">PAID</span>
@@ -152,7 +163,7 @@ export function StudentProfile() {
                         ))}
                         {lessons.length === 0 && (
                             <tr>
-                                <td colSpan={4} className="p-8 text-center text-gray-400 italic">
+                                <td colSpan={5} className="p-8 text-center text-gray-400 italic">
                                     No lesson records available for this student yet.
                                 </td>
                             </tr>

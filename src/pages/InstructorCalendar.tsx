@@ -949,63 +949,91 @@ export function InstructorCalendar() {
       {/* Lesson detail — full screen on mobile, modal on desktop */}
       {selectedSlot && selectedSlot.lesson && (
         isMobileDayView ? (
-          // Full-screen sheet on mobile
-          <div className="fixed inset-0 bg-white z-50 flex flex-col overflow-auto">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
-              <h3 className="text-lg font-bold text-gray-900">Lesson Details</h3>
-              <button onClick={() => setSelectedSlot(null)} className="p-2 hover:bg-gray-100 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center">
-                <X className="w-5 h-5" />
-              </button>
+          // Mobile: full-screen sheet with clear header/body/footer
+          <div className="fixed inset-0 bg-white z-50 flex flex-col">
+            {/* Header — student + time + status */}
+            <div className="shrink-0 border-b border-gray-100">
+              <div className="flex items-center justify-between p-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                    <span className="text-sm font-semibold text-slate-600">
+                      {selectedSlot.lesson.studentFirstName[0]}{selectedSlot.lesson.studentLastName[0]}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 truncate">
+                      {selectedSlot.lesson.studentFirstName} {selectedSlot.lesson.studentLastName}
+                    </p>
+                    <p className="text-sm text-gray-500">{selectedSlot.time} – {selectedSlot.endTime}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${selectedSlot.lesson.paid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                    {selectedSlot.lesson.paid ? "Paid" : "Unpaid"}
+                  </span>
+                  <button onClick={() => setSelectedSlot(null)} className="p-2 hover:bg-gray-100 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="flex-1 p-4 space-y-4 overflow-auto">
+
+            {/* Body — editable fields */}
+            <div className="flex-1 p-4 space-y-5 overflow-auto">
+              {/* Amount + Location row */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Student</p>
-                  <p className="font-medium text-gray-900">{selectedSlot.lesson.studentFirstName} {selectedSlot.lesson.studentLastName}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Time</p>
-                  <p className="font-medium text-gray-900">{selectedSlot.time} - {selectedSlot.endTime}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Status</p>
-                  <p className="font-medium">{selectedSlot.lesson.paid ? <span className="text-emerald-600">Paid</span> : <span className="text-amber-600">Unpaid</span>}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-500">Amount</p>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Amount (EUR)</label>
                   <input
                     type="text"
                     value={selectedSlot.lesson.amount || ""}
                     onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, amount: e.target.value } })}
                     placeholder="30"
-                    className="w-full p-1.5 border rounded text-sm mt-0.5"
+                    className="w-full p-2.5 border rounded-lg text-sm"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
+                  {locations.length > 0 ? (
+                    <select
+                      value={selectedSlot.lesson.location || ""}
+                      onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                      className="w-full p-2.5 border rounded-lg text-sm min-h-[42px]"
+                    >
+                      <option value="">Custom…</option>
+                      {locations.map(loc => (
+                        <option key={loc.id} value={loc.name}>{loc.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={selectedSlot.lesson.location || ""}
+                      onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                      placeholder="Location"
+                      className="w-full p-2.5 border rounded-lg text-sm"
+                    />
+                  )}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                <select
-                  value={selectedSlot.lesson.location || ""}
-                  onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                  className="w-full p-2.5 border rounded-lg text-sm mb-2 min-h-[44px]"
-                >
-                  <option value="">-- Custom location --</option>
-                  {locations.map(loc => (
-                    <option key={loc.id} value={loc.name}>{loc.name}{loc.address ? ` - ${loc.address}` : ""}</option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={selectedSlot.lesson.location || ""}
-                  onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                  placeholder="Or type custom location..."
-                  className="w-full p-2.5 border rounded-lg text-sm min-h-[44px]"
-                />
-              </div>
+              {/* Custom location if dropdown doesn't match */}
+              {locations.length > 0 && !locations.some(l => l.name === selectedSlot.lesson.location) && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Custom location</label>
+                  <input
+                    type="text"
+                    value={selectedSlot.lesson.location || ""}
+                    onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                    placeholder="Enter custom location…"
+                    className="w-full p-2.5 border rounded-lg text-sm"
+                  />
+                </div>
+              )}
 
+              {/* Comments */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Comments</label>
                 <textarea
                   value={selectedSlot.lesson.notes || ""}
                   onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, notes: e.target.value } })}
@@ -1014,46 +1042,60 @@ export function InstructorCalendar() {
                   rows={3}
                 />
               </div>
+            </div>
 
-              {/* Action buttons — stacked, big tap targets */}
-              <div className="space-y-2 pt-2">
+            {/* Footer — actions, sticky bottom */}
+            <div className="shrink-0 border-t border-gray-100 p-4 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => {
                     handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "", selectedSlot.lesson!.amount || "");
                     setSelectedSlot(null);
                   }}
-                  className="w-full bg-slate-800 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-slate-900 transition min-h-[44px]"
+                  className="bg-slate-800 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-slate-900 transition min-h-[44px]"
                 >
-                  Save Details
+                  Save
                 </button>
-
-                {!selectedSlot.lesson.paid && (
+                {!selectedSlot.lesson.paid ? (
                   <button
                     onClick={() => { handleMarkPaid(selectedSlot.lesson!.id, selectedSlot.lesson!.studentId); setSelectedSlot(null); }}
-                    className="w-full bg-emerald-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-emerald-700 transition min-h-[44px]"
+                    className="bg-emerald-600 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-emerald-700 transition min-h-[44px]"
                   >
-                    Mark as Paid
+                    Mark Paid
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setRescheduleLesson(selectedSlot.lesson!);
+                      setSelectedTargetSlotId(null);
+                      setIsRescheduleOpen(true);
+                    }}
+                    className="bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200 min-h-[44px]"
+                  >
+                    Reschedule
                   </button>
                 )}
-
-                <button
-                  onClick={() => {
-                    setRescheduleLesson(selectedSlot.lesson!);
-                    setSelectedTargetSlotId(null);
-                    setIsRescheduleOpen(true);
-                  }}
-                  className="w-full bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-100 min-h-[44px]"
-                >
-                  Reschedule Lesson
-                </button>
-
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {!selectedSlot.lesson.paid && (
+                  <button
+                    onClick={() => {
+                      setRescheduleLesson(selectedSlot.lesson!);
+                      setSelectedTargetSlotId(null);
+                      setIsRescheduleOpen(true);
+                    }}
+                    className="bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200 min-h-[44px]"
+                  >
+                    Reschedule
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setCancelLesson(selectedSlot.lesson!);
                     setCancelReason("");
                     setIsCancelOpen(true);
                   }}
-                  className="w-full bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-red-100 transition border border-red-100 min-h-[44px]"
+                  className="bg-white text-red-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-red-50 transition border border-red-200 min-h-[44px] ${!selectedSlot.lesson.paid ? '' : 'col-span-2'}"
                 >
                   Cancel Lesson
                 </button>
@@ -1061,102 +1103,139 @@ export function InstructorCalendar() {
             </div>
           </div>
         ) : (
-          // Desktop modal (same as before)
+          // Desktop: structured modal with header/body/footer
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Lesson Details</h3>
-              <div className="space-y-3 mb-6">
-                <p><strong>Student:</strong> {selectedSlot.lesson.studentFirstName} {selectedSlot.lesson.studentLastName}</p>
-                <p><strong>Time:</strong> {selectedSlot.time} - {selectedSlot.endTime}</p>
-                <p><strong>Status:</strong> {selectedSlot.lesson.paid ? "Paid" : "Unpaid"}</p>
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
+              {/* Header */}
+              <div className="px-6 pt-5 pb-4 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                      <span className="text-sm font-semibold text-slate-600">
+                        {selectedSlot.lesson.studentFirstName[0]}{selectedSlot.lesson.studentLastName[0]}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">
+                        {selectedSlot.lesson.studentFirstName} {selectedSlot.lesson.studentLastName}
+                      </p>
+                      <p className="text-sm text-gray-500">{selectedSlot.time} – {selectedSlot.endTime}</p>
+                    </div>
+                  </div>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${selectedSlot.lesson.paid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                    {selectedSlot.lesson.paid ? "Paid" : "Unpaid"}
+                  </span>
+                </div>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Amount (EUR)</label>
-                  <input
-                    type="text"
-                    value={selectedSlot.lesson.amount || ""}
-                    onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, amount: e.target.value } })}
-                    placeholder="30"
-                    className="w-full p-2 border rounded text-sm"
-                  />
+              {/* Body — editable fields */}
+              <div className="px-6 py-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Amount (EUR)</label>
+                    <input
+                      type="text"
+                      value={selectedSlot.lesson.amount || ""}
+                      onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, amount: e.target.value } })}
+                      placeholder="30"
+                      className="w-full p-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
+                    {locations.length > 0 ? (
+                      <select
+                        value={selectedSlot.lesson.location || ""}
+                        onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                        className="w-full p-2 border rounded-lg text-sm"
+                      >
+                        <option value="">Custom…</option>
+                        {locations.map(loc => (
+                          <option key={loc.id} value={loc.name}>{loc.name}{loc.address ? ` – ${loc.address}` : ""}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={selectedSlot.lesson.location || ""}
+                        onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                        placeholder="Location"
+                        className="w-full p-2 border rounded-lg text-sm"
+                      />
+                    )}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
-                  <select
-                    value={selectedSlot.lesson.location || ""}
-                    onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                    className="w-full p-2 border rounded text-sm mb-1"
-                  >
-                    <option value="">-- Custom location --</option>
-                    {locations.map(loc => (
-                      <option key={loc.id} value={loc.name}>{loc.name}{loc.address ? ` - ${loc.address}` : ""}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={selectedSlot.lesson.location || ""}
-                    onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                    placeholder="Or type custom location..."
-                    className="w-full p-2 border rounded text-sm"
-                  />
-                </div>
+                {/* Custom location when dropdown doesn't match */}
+                {locations.length > 0 && !locations.some(l => l.name === selectedSlot.lesson.location) && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Custom location</label>
+                    <input
+                      type="text"
+                      value={selectedSlot.lesson.location || ""}
+                      onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                      placeholder="Enter custom location…"
+                      className="w-full p-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                )}
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Instructor Comments</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Comments</label>
                   <textarea
                     value={selectedSlot.lesson.notes || ""}
                     onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, notes: e.target.value } })}
                     placeholder="How did the student do?"
-                    className="w-full p-2 border rounded text-sm"
+                    className="w-full p-2 border rounded-lg text-sm"
                     rows={3}
                   />
                 </div>
-                <button
-                  onClick={() => {
-                    handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "", selectedSlot.lesson!.amount || "");
-                    setSelectedSlot(null);
-                  }}
-                  className="w-full text-xs bg-slate-800 text-white px-2 py-2 rounded hover:bg-slate-900 transition-colors"
-                >
-                  Save Lesson Details
-                </button>
               </div>
 
-              {!selectedSlot.lesson.paid && (
-                <button
-                  onClick={() => { handleMarkPaid(selectedSlot.lesson!.id, selectedSlot.lesson!.studentId); setSelectedSlot(null); }}
-                  className="w-full bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 transition"
-                >
-                  Mark as Paid
-                </button>
-              )}
-
-              <button
-                onClick={() => {
-                  setRescheduleLesson(selectedSlot.lesson!);
-                  setSelectedTargetSlotId(null);
-                  setIsRescheduleOpen(true);
-                }}
-                className="w-full mt-2 bg-blue-50 text-blue-600 px-4 py-2 rounded hover:bg-blue-100 transition text-sm font-medium border border-blue-100"
-              >
-                Reschedule Lesson
-              </button>
-
-              <button
-                onClick={() => {
-                  setCancelLesson(selectedSlot.lesson!);
-                  setCancelReason("");
-                  setIsCancelOpen(true);
-                }}
-                className="w-full mt-2 bg-red-50 text-red-600 px-4 py-2 rounded hover:bg-red-100 transition text-sm font-medium border border-red-100"
-              >
-                Cancel Lesson
-              </button>
-
-              <button onClick={() => setSelectedSlot(null)} className="w-full mt-2 text-gray-600 hover:text-gray-900">
-                Close
-              </button>
+              {/* Footer — action buttons */}
+              <div className="px-6 pb-5 space-y-2">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "", selectedSlot.lesson!.amount || "");
+                      setSelectedSlot(null);
+                    }}
+                    className="flex-1 bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-900 transition"
+                  >
+                    Save
+                  </button>
+                  {!selectedSlot.lesson.paid && (
+                    <button
+                      onClick={() => { handleMarkPaid(selectedSlot.lesson!.id, selectedSlot.lesson!.studentId); setSelectedSlot(null); }}
+                      className="flex-1 bg-emerald-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 transition"
+                    >
+                      Mark Paid
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setRescheduleLesson(selectedSlot.lesson!);
+                      setSelectedTargetSlotId(null);
+                      setIsRescheduleOpen(true);
+                    }}
+                    className="flex-1 bg-blue-50 text-blue-600 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200"
+                  >
+                    Reschedule
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCancelLesson(selectedSlot.lesson!);
+                      setCancelReason("");
+                      setIsCancelOpen(true);
+                    }}
+                    className="flex-1 bg-white text-red-600 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-red-50 transition border border-red-200"
+                  >
+                    Cancel Lesson
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )

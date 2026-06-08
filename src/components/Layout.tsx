@@ -1,7 +1,7 @@
 import { Outlet, Navigate, Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
 import { ToastContainer } from "../lib/notify";
-import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon, MessageCircle, Bell, X } from "lucide-react";
+import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon, MessageCircle, Bell, X, MoreVertical } from "lucide-react";
 import clsx from "clsx";
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
@@ -12,6 +12,7 @@ export function Layout() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [calendarAlerts, setCalendarAlerts] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -64,10 +65,11 @@ export function Layout() {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setShowNotifDropdown(false);
       }
+      if (showMobileMenu) setShowMobileMenu(false);
     };
-    if (showNotifDropdown) document.addEventListener("mousedown", handler);
+    if (showNotifDropdown || showMobileMenu) document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [showNotifDropdown]);
+  }, [showNotifDropdown, showMobileMenu]);
 
   // Fetch notifications when dropdown opens
   useEffect(() => {
@@ -171,9 +173,9 @@ export function Layout() {
 
       {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 pb-20 md:pb-8 relative">
-        {/* Notification dropdown (desktop) */}
+        {/* Notification dropdown — desktop: top-right, mobile: bottom sheet */}
         {showNotifDropdown && !isStudent && (
-          <div ref={notifRef} className="absolute top-2 right-2 md:top-4 md:right-4 z-50 w-80 max-h-96 overflow-auto bg-white rounded-xl shadow-xl border border-gray-200">
+          <div ref={notifRef} className="absolute top-2 right-2 md:top-4 md:right-4 z-50 md:w-80 md:max-h-96 w-[calc(100%-1rem)] left-2 md:left-auto max-h-[60vh] md:max-h-96 overflow-auto bg-white rounded-xl shadow-xl border border-gray-200">
             <div className="sticky top-0 bg-white p-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-gray-900">Calendar Activity</h3>
               <button onClick={() => setShowNotifDropdown(false)} className="text-gray-400 hover:text-gray-600">
@@ -221,7 +223,7 @@ export function Layout() {
       {/* Mobile Bottom Tab Bar */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-pb">
         <div className="flex justify-around items-center h-14">
-          {navItems.slice(0, 5).map(item => (
+          {navItems.slice(0, 4).map(item => (
             <Link
               key={item.to}
               to={item.to}
@@ -243,7 +245,68 @@ export function Layout() {
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           ))}
+          {/* More menu for overflow items */}
+          {(() => {
+            const overflow = navItems.slice(4);
+            if (overflow.length === 0) return null;
+            return (
+              <button
+                onClick={() => setShowMobileMenu(!showMobileMenu)}
+                className={clsx(
+                  "flex flex-col items-center justify-center gap-0.5 flex-1 h-full relative pt-1",
+                  overflow.some(item => item.match) ? "text-blue-600" : "text-gray-400"
+                )}
+              >
+                <div className="relative">
+                  {showMobileMenu ? <X className="w-5 h-5" /> : <MoreVertical className="w-5 h-5" />}
+                </div>
+                <span className="text-[10px] font-medium">More</span>
+              </button>
+            );
+          })()}
         </div>
+
+        {/* Mobile overflow menu */}
+        {showMobileMenu && (
+          <div className="absolute bottom-14 right-0 left-0 bg-white border-t border-gray-200 shadow-lg z-50">
+            {navItems.slice(4).map(item => (
+              <Link
+                key={item.to}
+                to={item.to}
+                onClick={() => setShowMobileMenu(false)}
+                className={clsx(
+                  "flex items-center gap-3 px-4 py-3 border-b border-gray-50",
+                  item.match ? "bg-blue-50 text-blue-600" : "text-gray-700 hover:bg-gray-50"
+                )}
+              >
+                <item.icon className="w-5 h-5" />
+                <span className="text-sm font-medium">{item.label}</span>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="ml-auto bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{item.badge}</span>
+                )}
+              </Link>
+            ))}
+            {!isStudent && (
+              <button
+                onClick={() => { setShowMobileMenu(false); setShowNotifDropdown(!showNotifDropdown); }}
+                className="flex items-center gap-3 px-4 py-3 w-full text-gray-700 hover:bg-gray-50 border-b border-gray-50"
+              >
+                <Bell className="w-5 h-5" />
+                <span className="text-sm font-medium">Notifications</span>
+                {calendarAlerts > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{calendarAlerts}</span>
+                )}
+              </button>
+            )}
+            <button
+              onClick={() => { setShowMobileMenu(false); logout(); }}
+              className="flex items-center gap-3 px-4 py-3 w-full text-red-600 hover:bg-red-50"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="text-sm font-medium">Sign Out</span>
+            </button>
+          </div>
+        )}
       </nav>
     </div>
   );

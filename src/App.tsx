@@ -8,6 +8,7 @@ import { CalendarView } from "./pages/Calendar";
 import { StudentProfile } from "./pages/StudentProfile";
 import { Messages } from "./pages/Messages";
 import { OAuthCallback } from "./pages/OAuthCallback";
+import { NotFound } from "./pages/NotFound";
 import { useAuthStore } from "./lib/store";
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="messages/:partnerId" element={<Messages />} />
           <Route path="profile" element={<StudentProfile />} />
         </Route>
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );

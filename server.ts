@@ -11,7 +11,7 @@ import fs from "fs";
 import { Server } from "socket.io";
 import { db } from "./src/db/index.js";
 import { users } from "./src/db/schema.js";
-import { requireAuth } from "./src/middleware/auth.js";
+import { requireAuth, requireAdmin } from "./src/middleware/auth.js";
 import authRoutes from "./src/routes/auth.js";
 import studentRoutes from "./src/routes/students.js";
 import paymentRoutes from "./src/routes/payments.js";
@@ -79,7 +79,7 @@ async function startServer() {
 
   // --- Deploy logs ---
   const LOGDIR = "/tmp/skola-deploy";
-  app.get("/deploy/logs", (req, res) => {
+  app.get("/deploy/logs", requireAdmin, (req, res) => {
     try {
       const files = fs.readdirSync(LOGDIR).filter(f => f.endsWith(".log")).sort().reverse();
       res.json({ logs: files });
@@ -87,7 +87,7 @@ async function startServer() {
       res.json({ logs: [] });
     }
   });
-  app.get("/deploy/logs/:name", (req, res) => {
+  app.get("/deploy/logs/:name", requireAdmin, (req, res) => {
     const name = req.params.name.replace(/[^a-zA-Z0-9._-]/g, "");
     try {
       res.type("text/plain").send(fs.readFileSync(`${LOGDIR}/${name}`, "utf8"));
@@ -103,7 +103,7 @@ async function startServer() {
   app.use("/api/calendar", calendarRoutes);
   app.use("/api/messages", messageRoutes);
 
-  app.get("/api/users", requireAuth, async (req, res) => {
+  app.get("/api/users", requireAdmin, async (req, res) => {
     try {
       // Use standard SQLite select but filter fields manually or via query
       const allUsers = await db.select({

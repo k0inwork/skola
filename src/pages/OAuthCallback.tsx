@@ -2,17 +2,32 @@ import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
 
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name.replace(/([.$?*|{}()\[\]\\\/+^])/g, '\\$1')}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function deleteCookie(name: string) {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+}
+
 export function OAuthCallback() {
   const [params] = useSearchParams();
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const accessToken = params.get("accessToken");
-    const refreshToken = params.get("refreshToken");
+    // Read tokens from httpOnly cookies set by the server (secure transfer)
+    // Fallback: also check URL params for backward compatibility during migration
+    const accessToken = getCookie("oauth_access_token") || params.get("accessToken");
+    const refreshToken = getCookie("oauth_refresh_token") || params.get("refreshToken");
     const role = params.get("role");
     const name = params.get("name");
     const picture = params.get("picture");
+
+    // Clean up the cookies immediately
+    deleteCookie("oauth_access_token");
+    deleteCookie("oauth_refresh_token");
 
     if (accessToken && refreshToken && role) {
       setAuth(accessToken, refreshToken, role);

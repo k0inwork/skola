@@ -31,9 +31,9 @@ export async function sendNewMessageEmail(
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="margin-bottom: 8px;">Jauna ziņa</h2>
-        <p style="color: #666; margin-top: 0;"><strong>${senderName}</strong> nosūtīja jums ziņu:</p>
+        <p style="color: #666; margin-top: 0;"><strong>${senderName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</strong> nosūtīja jums ziņu:</p>
         <div style="background: #f5f5f5; padding: 12px 16px; border-radius: 8px; margin: 16px 0;">
-          ${content.replace(/\n/g, "<br>")}
+          ${content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}
         </div>
         <a href="${config.APP_URL}/messages"
            style="display: inline-block; background: #2563eb; color: #fff; padding: 10px 20px;

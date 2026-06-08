@@ -3,6 +3,7 @@ import { useAuthStore } from "../lib/store";
 import { toastSuccess, toastError } from "../lib/notify";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Plus, DollarSign, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import clsx from "clsx";
 
 interface Payment {
   id: string;
@@ -368,8 +369,4 @@ export function Payments() {
       />
     </div>
   );
-}
-
-function clsx(...args: (string | boolean | undefined | null)[]) {
-  return args.filter(Boolean).join(" ");
 }
