@@ -721,7 +721,7 @@ export function InstructorCalendar() {
     const totalHeight = hours.length * HOUR_HEIGHT;
 
     return (
-      <div ref={gridRef} className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-auto">
+      <div ref={gridRef} className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-auto" onContextMenu={e => e.preventDefault()}>
         <div className="flex min-w-[900px]">
           {/* Time gutter */}
           <div className="w-14 shrink-0 border-r border-gray-100" style={{ height: totalHeight + 60 }}>
