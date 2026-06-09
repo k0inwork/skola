@@ -79,6 +79,8 @@ export const workingDaySchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
   endTime: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
   slotDurationMin: z.number().int().min(15).max(480).optional(),
+  location: z.string().max(200).optional().nullable(),
+  vehicle: z.string().max(100).optional().nullable(),
 });
 
 export const copyWeekSchema = z.object({

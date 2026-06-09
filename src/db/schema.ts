@@ -114,6 +114,8 @@ export const instructorWorkingDays = pgTable("instructor_working_days", {
   startTime: text("start_time").default("09:00"),
   endTime: text("end_time").default("17:00"),
   slotDurationMin: integer("slot_duration_min").default(60),
+  location: text("location"),
+  vehicle: text("vehicle"),
 });
 
 export const payments = pgTable("payments", {

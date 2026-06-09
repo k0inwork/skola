@@ -14,6 +14,8 @@ interface WorkingDay {
   startTime: string;
   endTime: string;
   slotDurationMin: number;
+  location: string | null;
+  vehicle: string | null;
 }
 
 interface BookedLesson {
@@ -92,7 +94,9 @@ export function InstructorCalendar() {
     isWorking: true,
     startTime: "09:00",
     endTime: "17:00",
-    slotDurationMin: 90
+    slotDurationMin: 90,
+    location: "" as string | null,
+    vehicle: "" as string | null,
   });
 
   // Reschedule state
@@ -216,9 +220,9 @@ export function InstructorCalendar() {
     const existing = workingDays.find(d => d.date === dateStr);
     setEditingDate(date);
     if (existing) {
-      setSettingsForm({ isWorking: existing.isWorking, startTime: existing.startTime, endTime: existing.endTime, slotDurationMin: existing.slotDurationMin });
+      setSettingsForm({ isWorking: existing.isWorking, startTime: existing.startTime, endTime: existing.endTime, slotDurationMin: existing.slotDurationMin, location: existing.location, vehicle: existing.vehicle });
     } else {
-      setSettingsForm({ isWorking: true, startTime: "09:00", endTime: "17:00", slotDurationMin: 90 });
+      setSettingsForm({ isWorking: true, startTime: "09:00", endTime: "17:00", slotDurationMin: 90, location: null, vehicle: null });
     }
     setIsSettingsOpen(true);
   };
@@ -746,12 +750,20 @@ export function InstructorCalendar() {
                   <div
                     onClick={() => handleDayClick(d)}
                     className={clsx(
-                      "h-[60px] border-b border-gray-100 text-center cursor-pointer hover:bg-gray-50 shrink-0 flex flex-col items-center justify-center",
+                      "border-b border-gray-100 text-center cursor-pointer hover:bg-gray-50 shrink-0 flex flex-col items-center justify-center py-1",
                       isToday ? "bg-blue-50" : "bg-white"
                     )}
                   >
                     <div className={clsx("text-xs font-medium", isToday ? "text-blue-600" : "text-gray-600")}>{format(d, "EEE")}</div>
                     <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
+                    <div className="flex gap-1 mt-0.5 flex-wrap justify-center">
+                      {wDay?.location && (
+                        <span className="text-[10px] leading-tight bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{wDay.location}</span>
+                      )}
+                      {wDay?.vehicle && (
+                        <span className="text-[10px] leading-tight bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded capitalize">{wDay.vehicle}</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Grid body */}
@@ -914,6 +926,12 @@ export function InstructorCalendar() {
               <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded-full font-medium">Working</span>
             ) : (
               <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full font-medium">Off</span>
+            )}
+            {wDay?.location && (
+              <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full font-medium ml-1">{wDay.location}</span>
+            )}
+            {wDay?.vehicle && (
+              <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium ml-1 capitalize">{wDay.vehicle}</span>
             )}
           </div>
         </div>
@@ -1091,7 +1109,11 @@ export function InstructorCalendar() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => startDragFromDialog(selectedSlot)}
+                    onClick={() => {
+                      setRescheduleLesson(selectedSlot.lesson!);
+                      setSelectedTargetSlotId(null);
+                      setIsRescheduleOpen(true);
+                    }}
                     className="bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200 min-h-[44px]"
                   >
                     Reschedule
@@ -1101,7 +1123,11 @@ export function InstructorCalendar() {
               <div className="grid grid-cols-2 gap-2">
                 {!selectedSlot.lesson.paid && (
                   <button
-                    onClick={() => startDragFromDialog(selectedSlot)}
+                    onClick={() => {
+                      setRescheduleLesson(selectedSlot.lesson!);
+                      setSelectedTargetSlotId(null);
+                      setIsRescheduleOpen(true);
+                    }}
                     className="bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200 min-h-[44px]"
                   >
                     Reschedule
@@ -1391,6 +1417,33 @@ export function InstructorCalendar() {
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-1">Lesson duration: 90 min (fixed)</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
+                      <select
+                        value={settingsForm.location || ""}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, location: e.target.value || null })}
+                        className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
+                      >
+                        <option value="">— none —</option>
+                        {locations.map((loc: { id: string; name: string }) => (
+                          <option key={loc.id} value={loc.name}>{loc.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Vehicle</label>
+                      <select
+                        value={settingsForm.vehicle || ""}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, vehicle: e.target.value || null })}
+                        className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
+                      >
+                        <option value="">— none —</option>
+                        <option value="auto">Auto</option>
+                        <option value="manual">Manual</option>
+                      </select>
+                    </div>
+                  </div>
                 </>
               )}
               <div className="flex gap-3 pt-2">

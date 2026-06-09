@@ -107,7 +107,7 @@ router.get("/working-days", async (req, res) => {
 // Upsert working day — regenerates slots for that day
 router.post("/working-days", validate(workingDaySchema), async (req, res) => {
   try {
-    const { instructorId, date, isWorking, startTime, endTime } = req.body;
+    const { instructorId, date, isWorking, startTime, endTime, location, vehicle } = req.body;
     const slotDurationMin = req.body.slotDurationMin || 90;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
@@ -120,13 +120,15 @@ router.post("/working-days", validate(workingDaySchema), async (req, res) => {
       eq(instructorWorkingDays.date, date)
     ));
 
+    const dayData = { isWorking, startTime, endTime, slotDurationMin, location: location || null, vehicle: vehicle || null };
+
     if (existing.length > 0) {
       await db.update(instructorWorkingDays)
-        .set({ isWorking, startTime, endTime, slotDurationMin })
+        .set(dayData)
         .where(eq(instructorWorkingDays.id, existing[0].id));
     } else {
       await db.insert(instructorWorkingDays).values({
-        instructorId, date, isWorking, startTime, endTime, slotDurationMin
+        instructorId, date, ...dayData
       });
     }
 
@@ -332,6 +334,12 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
       }
     }
 
+    // Inherit location/vehicle from working day
+    const [workingDay] = await db.select().from(instructorWorkingDays).where(and(
+      eq(instructorWorkingDays.instructorId, instructorId),
+      eq(instructorWorkingDays.date, slot.date)
+    )).limit(1);
+
     const [lesson] = await db.insert(lessons).values({
       enrollmentId,
       studentId,
@@ -340,7 +348,9 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
       startTime: slot.startTime,
       endTime: slot.endTime,
       durationMin: durationMin || 90,
-      status: "scheduled"
+      status: "scheduled",
+      location: workingDay?.location || null,
+      vehicle: workingDay?.vehicle || null,
     }).returning();
 
     // Mark slot as booked
@@ -999,12 +1009,13 @@ router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
       ));
       if (existing.length > 0) {
         await db.update(instructorWorkingDays)
-          .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90 })
+          .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90, location: day.location, vehicle: day.vehicle })
           .where(eq(instructorWorkingDays.id, existing[0].id));
       } else {
         await db.insert(instructorWorkingDays).values({
           instructorId, date: newDate, isWorking: day.isWorking,
           startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90,
+          location: day.location, vehicle: day.vehicle,
         });
       }
     }
