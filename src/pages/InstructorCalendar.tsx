@@ -1024,7 +1024,7 @@ export function InstructorCalendar() {
 
             {/* Body — editable fields */}
             <div className="flex-1 p-4 space-y-5 overflow-auto">
-              {/* Amount + Location row */}
+              {/* Amount + Day info row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Amount (EUR)</label>
@@ -1037,43 +1037,29 @@ export function InstructorCalendar() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
-                  {locations.length > 0 ? (
-                    <select
-                      value={selectedSlot.lesson.location || ""}
-                      onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                      className="w-full p-2.5 border rounded-lg text-sm min-h-[42px]"
-                    >
-                      <option value="">Custom…</option>
-                      {locations.map(loc => (
-                        <option key={loc.id} value={loc.name}>{loc.name}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={selectedSlot.lesson.location || ""}
-                      onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                      placeholder="Location"
-                      className="w-full p-2.5 border rounded-lg text-sm"
-                    />
-                  )}
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Day info</label>
+                  <div className="flex flex-wrap gap-1 items-center min-h-[42px]">
+                    {(() => {
+                      const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
+                      return (
+                        <>
+                          {wd?.location && (
+                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />{wd.location}
+                            </span>
+                          )}
+                          {wd?.vehicle && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded capitalize">{wd.vehicle}</span>
+                          )}
+                          {!wd?.location && !wd?.vehicle && (
+                            <span className="text-xs text-gray-400">No day info</span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
-
-              {/* Custom location if dropdown doesn't match */}
-              {locations.length > 0 && !locations.some(l => l.name === selectedSlot.lesson.location) && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Custom location</label>
-                  <input
-                    type="text"
-                    value={selectedSlot.lesson.location || ""}
-                    onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                    placeholder="Enter custom location…"
-                    className="w-full p-2.5 border rounded-lg text-sm"
-                  />
-                </div>
-              )}
 
               {/* Comments */}
               <div>
@@ -1093,7 +1079,7 @@ export function InstructorCalendar() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => {
-                    handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "", selectedSlot.lesson!.amount || "");
+                    handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", "", selectedSlot.lesson!.amount || "");
                     setSelectedSlot(null);
                   }}
                   className="bg-slate-800 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-slate-900 transition min-h-[44px]"
@@ -1186,43 +1172,29 @@ export function InstructorCalendar() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
-                    {locations.length > 0 ? (
-                      <select
-                        value={selectedSlot.lesson.location || ""}
-                        onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                        className="w-full p-2 border rounded-lg text-sm"
-                      >
-                        <option value="">Custom…</option>
-                        {locations.map(loc => (
-                          <option key={loc.id} value={loc.name}>{loc.name}{loc.address ? ` – ${loc.address}` : ""}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={selectedSlot.lesson.location || ""}
-                        onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                        placeholder="Location"
-                        className="w-full p-2 border rounded-lg text-sm"
-                      />
-                    )}
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Day info</label>
+                    <div className="flex flex-wrap gap-1 items-center min-h-[38px]">
+                      {(() => {
+                        const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
+                        return (
+                          <>
+                            {wd?.location && (
+                              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />{wd.location}
+                              </span>
+                            )}
+                            {wd?.vehicle && (
+                              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded capitalize">{wd.vehicle}</span>
+                            )}
+                            {!wd?.location && !wd?.vehicle && (
+                              <span className="text-xs text-gray-400">No day info</span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
-
-                {/* Custom location when dropdown doesn't match */}
-                {locations.length > 0 && !locations.some(l => l.name === selectedSlot.lesson.location) && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Custom location</label>
-                    <input
-                      type="text"
-                      value={selectedSlot.lesson.location || ""}
-                      onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
-                      placeholder="Enter custom location…"
-                      className="w-full p-2 border rounded-lg text-sm"
-                    />
-                  </div>
-                )}
 
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Comments</label>
@@ -1241,7 +1213,7 @@ export function InstructorCalendar() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
-                      handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "", selectedSlot.lesson!.amount || "");
+                      handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", "", selectedSlot.lesson!.amount || "");
                       setSelectedSlot(null);
                     }}
                     className="flex-1 bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-900 transition"
