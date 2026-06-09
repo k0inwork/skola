@@ -582,8 +582,6 @@ export function InstructorCalendar() {
     const handleMouseUp = () => {
       const draft = moveDraftRef.current;
       const orig = moveStartSlotRef.current;
-      moveJustFinishedRef.current = true;
-      setTimeout(() => { moveJustFinishedRef.current = false; }, 100);
 
       if (!draft || !orig) {
         setMovingSlotId(null);
@@ -606,6 +604,10 @@ export function InstructorCalendar() {
         setHighlightedSlotId(null);
         return;
       }
+
+      // Only block click after an actual move
+      moveJustFinishedRef.current = true;
+      setTimeout(() => { moveJustFinishedRef.current = false; }, 100);
 
       // Snapshot values then clear ALL drag state immediately
       const slotId = draft.slotId;
