@@ -750,13 +750,13 @@ export function InstructorCalendar() {
                   <div
                     onClick={() => handleDayClick(d)}
                     className={clsx(
-                      "border-b border-gray-100 text-center cursor-pointer hover:bg-gray-50 shrink-0 flex flex-col items-center justify-center py-1",
+                      "border-b border-gray-100 text-center cursor-pointer hover:bg-gray-50 shrink-0 flex flex-col items-center justify-center py-1 min-h-[60px]",
                       isToday ? "bg-blue-50" : "bg-white"
                     )}
                   >
                     <div className={clsx("text-xs font-medium", isToday ? "text-blue-600" : "text-gray-600")}>{format(d, "EEE")}</div>
                     <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
-                    <div className="flex gap-1 mt-0.5 flex-wrap justify-center">
+                    <div className="flex gap-1 mt-0.5 flex-wrap justify-center min-h-[18px]">
                       {wDay?.location && (
                         <span className="text-[10px] leading-tight bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{wDay.location}</span>
                       )}
