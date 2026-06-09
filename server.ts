@@ -11,6 +11,7 @@ import fs from "fs";
 import { Server } from "socket.io";
 import { db } from "./src/db/index.js";
 import { users } from "./src/db/schema.js";
+import { eq } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "./src/middleware/auth.js";
 import authRoutes from "./src/routes/auth.js";
 import studentRoutes from "./src/routes/students.js";
