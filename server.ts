@@ -103,16 +103,26 @@ async function startServer() {
   app.use("/api/calendar", calendarRoutes);
   app.use("/api/messages", messageRoutes);
 
-  app.get("/api/users", requireAdmin, async (req, res) => {
+  app.get("/api/users", requireAuth, async (req: any, res) => {
     try {
-      // Use standard SQLite select but filter fields manually or via query
-      const allUsers = await db.select({
-        id: users.id,
-        email: users.email,
-        role: users.role,
-        createdAt: users.createdAt
-      }).from(users);
-      res.json(allUsers);
+      if (req.userRole === "admin") {
+        const allUsers = await db.select({
+          id: users.id,
+          email: users.email,
+          role: users.role,
+          createdAt: users.createdAt
+        }).from(users);
+        res.json(allUsers);
+      } else {
+        // Students only see instructors
+        const instructors = await db.select({
+          id: users.id,
+          email: users.email,
+          role: users.role,
+          createdAt: users.createdAt
+        }).from(users).where(eq(users.role, "instructor"));
+        res.json(instructors);
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
