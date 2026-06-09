@@ -821,7 +821,7 @@ export function InstructorCalendar() {
                           onClick={(e) => { e.stopPropagation(); if (moveJustFinishedRef.current) return; if (slot.lesson && !pending) setSelectedSlot(slot); }}
                           className={clsx(
                             "absolute left-1.5 right-1.5 rounded border transition-all select-none",
-                            isMoving ? "z-20 shadow-lg ring-2 ring-emerald-400 opacity-80" : "z-10",
+                            isMoving ? "z-30 shadow-lg ring-2 ring-emerald-400 opacity-80" : slot.lesson ? "z-20" : "z-10",
                             isHighlighted ? "z-15 ring-2 ring-emerald-500 shadow-md bg-emerald-200 border-emerald-400" :
                             pending ? "bg-amber-100 border-amber-300" :
                             slot.isAvailable
