@@ -142,6 +142,15 @@ export function InstructorCalendar() {
       .catch(console.error);
   }, [token]);
 
+  // Esc to close lesson detail dialog without saving
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedSlot) setSelectedSlot(null);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedSlot]);
+
   useEffect(() => {
     const socket = io({ auth: { token } });
     socket.on("calendar_update", (data) => {
@@ -505,6 +514,21 @@ export function InstructorCalendar() {
     moveStartXRef.current = e.clientX;
     moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime, date: slot.date };
     moveHasLessonRef.current = !!slot.lesson;
+  }, []);
+
+  const startDragFromDialog = useCallback((slot: Slot) => {
+    setSelectedSlot(null);
+    // Wait for dialog to unmount, then enter drag mode
+    requestAnimationFrame(() => {
+      const draft = { startTime: slot.time, endTime: slot.endTime, slotId: slot.id, date: slot.date };
+      setMovingSlotId(slot.id);
+      setMoveDraft(draft);
+      moveDraftRef.current = draft;
+      moveStartYRef.current = 0;
+      moveStartXRef.current = 0;
+      moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime, date: slot.date };
+      moveHasLessonRef.current = true;
+    });
   }, []);
 
   useEffect(() => {
@@ -1067,11 +1091,7 @@ export function InstructorCalendar() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => {
-                      setRescheduleLesson(selectedSlot.lesson!);
-                      setSelectedTargetSlotId(null);
-                      setIsRescheduleOpen(true);
-                    }}
+                    onClick={() => startDragFromDialog(selectedSlot)}
                     className="bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200 min-h-[44px]"
                   >
                     Reschedule
@@ -1081,11 +1101,7 @@ export function InstructorCalendar() {
               <div className="grid grid-cols-2 gap-2">
                 {!selectedSlot.lesson.paid && (
                   <button
-                    onClick={() => {
-                      setRescheduleLesson(selectedSlot.lesson!);
-                      setSelectedTargetSlotId(null);
-                      setIsRescheduleOpen(true);
-                    }}
+                    onClick={() => startDragFromDialog(selectedSlot)}
                     className="bg-blue-50 text-blue-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200 min-h-[44px]"
                   >
                     Reschedule
@@ -1217,11 +1233,7 @@ export function InstructorCalendar() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => {
-                      setRescheduleLesson(selectedSlot.lesson!);
-                      setSelectedTargetSlotId(null);
-                      setIsRescheduleOpen(true);
-                    }}
+                    onClick={() => startDragFromDialog(selectedSlot)}
                     className="flex-1 bg-blue-50 text-blue-600 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200"
                   >
                     Reschedule
@@ -1237,6 +1249,12 @@ export function InstructorCalendar() {
                     Cancel Lesson
                   </button>
                 </div>
+                <button
+                  onClick={() => setSelectedSlot(null)}
+                  className="w-full text-gray-500 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>
