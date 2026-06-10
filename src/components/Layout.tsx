@@ -278,7 +278,7 @@ export function Layout() {
 
         {/* Mobile overflow menu */}
         {showMobileMenu && (
-          <div className="absolute bottom-14 right-0 left-0 bg-white border-t border-gray-200 shadow-lg z-50" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed bottom-14 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-[9999]" onClick={(e) => e.stopPropagation()}>
             {navItems.slice(3).map(item => (
               <Link
                 key={item.to}
