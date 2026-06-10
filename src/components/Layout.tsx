@@ -279,7 +279,7 @@ export function Layout() {
         {/* Mobile overflow menu */}
         {showMobileMenu && (
           <div className="absolute bottom-14 right-0 left-0 bg-white border-t border-gray-200 shadow-lg z-50">
-            {navItems.slice(4).map(item => (
+            {navItems.slice(3).map(item => (
               <Link
                 key={item.to}
                 to={item.to}

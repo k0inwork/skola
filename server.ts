@@ -11,7 +11,7 @@ import fs from "fs";
 import { Server } from "socket.io";
 import { db } from "./src/db/index.js";
 import { users } from "./src/db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "./src/middleware/auth.js";
 import authRoutes from "./src/routes/auth.js";
 import studentRoutes from "./src/routes/students.js";
@@ -115,13 +115,13 @@ async function startServer() {
         }).from(users);
         res.json(allUsers);
       } else {
-        // Students only see instructors
+        // Students only see instructors/admins
         const instructors = await db.select({
           id: users.id,
           email: users.email,
           role: users.role,
           createdAt: users.createdAt
-        }).from(users).where(eq(users.role, "instructor"));
+        }).from(users).where(inArray(users.role, ["instructor", "admin"]));
         res.json(instructors);
       }
     } catch (e: any) {
