@@ -3,7 +3,7 @@ import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
 import { toastSuccess, toastError, toast } from "../lib/notify";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
 
@@ -337,16 +337,103 @@ export function InstructorCalendar() {
     e.dataTransfer.dropEffect = "move";
   };
 
-  // Touch swipe for mobile day navigation
+  // Touch swipe for mobile day navigation + slot drag
   const [touchStart, setTouchStart] = useState<number | null>(null);
-  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
+  const [touchDragSlot, setTouchDragSlot] = useState<Slot | null>(null);
+  const [touchDragY, setTouchDragY] = useState(0);
+  const [touchDragDraft, setTouchDragDraft] = useState<{ startTime: string; endTime: string } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStartPosRef.current = { x: t.clientX, y: t.clientY };
+    setTouchStart(t.clientX);
+  };
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (touchDragSlot) {
+      // Finish slot drag
+      e.preventDefault();
+      const draft = touchDragDraft;
+      const slot = touchDragSlot;
+      setTouchDragSlot(null);
+      setTouchDragDraft(null);
+      setTouchDragY(0);
+      if (draft && (draft.startTime !== slot.time || draft.endTime !== slot.endTime)) {
+        moveJustFinishedRef.current = true;
+        setTimeout(() => { moveJustFinishedRef.current = false; }, 200);
+        fetch(`/api/calendar/slots/${slot.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ startTime: draft.startTime, endTime: draft.endTime }),
+        }).then(res => { if (res.ok) fetchCalendarData(); });
+      }
+      return;
+    }
     if (touchStart === null) return;
     const diff = e.changedTouches[0].clientX - touchStart;
     if (Math.abs(diff) > 60) {
       setCurrentDate(diff > 0 ? subDays(currentDate, 1) : addDays(currentDate, 1));
     }
     setTouchStart(null);
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchDragSlot) {
+      e.preventDefault();
+      const t = e.touches[0];
+      const startY = touchStartPosRef.current?.y ?? t.clientY;
+      const deltaY = t.clientY - startY;
+      setTouchDragY(deltaY);
+      // Calculate time offset: each card ~70px = 90 min, so 1px ≈ 1.3 min
+      const minDelta = Math.round((deltaY / 70) * 90 / 15) * 15;
+      const [sh, sm] = touchDragSlot.time.split(":").map(Number);
+      const [eh, em] = touchDragSlot.endTime.split(":").map(Number);
+      const newStart = Math.max(GRID_START_HOUR * 60, Math.min((GRID_END_HOUR - 1.5) * 60, sh * 60 + sm + minDelta));
+      const duration = (eh * 60 + em) - (sh * 60 + sm);
+      const newEnd = Math.min(GRID_END_HOUR * 60, newStart + duration);
+      const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      setTouchDragDraft({ startTime: fmt(newStart), endTime: fmt(newEnd) });
+      return;
+    }
+  };
+
+  const handleSlotTouchStart = (e: React.TouchEvent, slot: Slot) => {
+    if (!isMobileDayView || isPendingReschedule(slot.lesson)) return;
+    const t = e.touches[0];
+    touchStartPosRef.current = { x: t.clientX, y: t.clientY };
+    longPressTimerRef.current = setTimeout(() => {
+      // Haptic feedback if available
+      if (navigator.vibrate) navigator.vibrate(30);
+      setTouchDragSlot(slot);
+      setTouchDragY(0);
+      setTouchDragDraft({ startTime: slot.time, endTime: slot.endTime });
+    }, 350);
+  };
+  const handleSlotTouchMove = (e: React.TouchEvent) => {
+    if (!longPressTimerRef.current && !touchDragSlot) return;
+    if (longPressTimerRef.current) {
+      const t = e.touches[0];
+      const start = touchStartPosRef.current;
+      if (start && (Math.abs(t.clientX - start.x) > 10 || Math.abs(t.clientY - start.y) > 10)) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+    if (touchDragSlot) handleTouchMove(e);
+  };
+  const handleSlotTouchEnd = (e: React.TouchEvent) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (touchDragSlot) {
+      e.stopPropagation();
+      handleTouchEnd(e);
+    }
   };
 
   // --- RENDER ---
@@ -374,6 +461,8 @@ export function InstructorCalendar() {
 
   const renderSlot = (slot: Slot, idx: number) => {
     const pending = isPendingReschedule(slot.lesson);
+    const isTouchDragging = touchDragSlot?.id === slot.id;
+    const isOtherTouchDragging = !!touchDragSlot && touchDragSlot.id !== slot.id;
     return (
     <div
       key={idx}
@@ -381,19 +470,30 @@ export function InstructorCalendar() {
       onDragStart={(e) => slot.lesson && !pending && handleDragStart(e, slot.lesson)}
       onDrop={(e) => handleDrop(e, slot)}
       onDragOver={handleDragOver}
-      onClick={() => slot.lesson && !pending && setSelectedSlot(slot)}
+      onClick={() => {
+        if (moveJustFinishedRef.current || touchDragSlot) return;
+        if (slot.lesson && !pending) setSelectedSlot(slot);
+      }}
+      onTouchStart={(e) => handleSlotTouchStart(e, slot)}
+      onTouchMove={handleSlotTouchMove}
+      onTouchEnd={handleSlotTouchEnd}
       className={clsx(
         "rounded-lg transition-all duration-200 relative group overflow-hidden border",
         isMobileDayView ? "p-3" : "p-2.5 text-xs",
-        pending
-          ? "bg-amber-50 border-amber-300 shadow-sm border-dashed"
-          : slot.isAvailable
-            ? draggedLesson
-              ? "bg-white shadow-sm border-dashed border-blue-300 cursor-drop hover:border-blue-400 hover:bg-blue-50/30"
-              : "bg-white shadow-sm border-gray-200 cursor-default"
-            : "bg-gray-50 border-gray-100 shadow-sm opacity-90 cursor-pointer hover:bg-gray-100",
+        isTouchDragging && "z-30 shadow-xl ring-2 ring-emerald-400 opacity-90 scale-[1.02] bg-emerald-50 border-emerald-300",
+        isOtherTouchDragging && "opacity-50",
+        !isTouchDragging && !isOtherTouchDragging && (
+          pending
+            ? "bg-amber-50 border-amber-300 shadow-sm border-dashed"
+            : slot.isAvailable
+              ? draggedLesson
+                ? "bg-white shadow-sm border-dashed border-blue-300 cursor-drop hover:border-blue-400 hover:bg-blue-50/30"
+                : "bg-white shadow-sm border-gray-200 cursor-default"
+              : "bg-gray-50 border-gray-100 shadow-sm opacity-90 cursor-pointer hover:bg-gray-100"
+        ),
         slot.lesson && !isMobileDayView && !pending && "cursor-grab active:cursor-grabbing"
       )}
+      style={isTouchDragging ? { transform: `translateY(${touchDragY}px)`, transition: 'none' } : undefined}
     >
       <div className={clsx("flex items-center gap-2 mb-1", isMobileDayView && "mb-2")}>
         <div className={clsx(
@@ -468,6 +568,31 @@ export function InstructorCalendar() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Floating time indicator during touch drag */}
+      {isTouchDragging && touchDragDraft && (
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg whitespace-nowrap z-40">
+          {touchDragDraft.startTime} – {touchDragDraft.endTime}
+        </div>
+      )}
+
+      {/* Mobile: delete free slot button */}
+      {isMobileDayView && slot.isAvailable && !slot.lesson && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm("Delete this slot?")) {
+              fetch(`/api/calendar/slots/${slot.id}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              }).then(res => { if (res.ok) fetchCalendarData(); });
+            }
+          }}
+          className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 transition opacity-0 group-hover:opacity-100"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
       )}
     </div>
     );
@@ -911,6 +1036,7 @@ export function InstructorCalendar() {
       <div
         className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-gray-200 overflow-auto"
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         {/* Day header - tap to open settings */}
