@@ -589,7 +589,7 @@ export function InstructorCalendar() {
               }).then(res => { if (res.ok) fetchCalendarData(); });
             }
           }}
-          className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 transition opacity-0 group-hover:opacity-100"
+          className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-gray-100 active:bg-red-100 text-gray-400 active:text-red-500 transition"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
