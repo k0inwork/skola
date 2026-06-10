@@ -1,4 +1,4 @@
-import { Outlet, Navigate, Link, useLocation } from "react-router-dom";
+import { Outlet, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../lib/store";
 import { ToastContainer } from "../lib/notify";
 import { LogOut, Users, BookOpen, CreditCard, Calendar as CalendarIcon, User as UserIcon, MessageCircle, Bell, X, MoreVertical } from "lucide-react";
@@ -9,6 +9,7 @@ import { io } from "socket.io-client";
 export function Layout() {
   const { token, role, logout } = useAuthStore();
   const location = useLocation();
+  const navigate = useNavigate();
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [calendarAlerts, setCalendarAlerts] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -280,12 +281,12 @@ export function Layout() {
         {showMobileMenu && (
           <div className="fixed bottom-14 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-[9999]" onClick={(e) => e.stopPropagation()}>
             {navItems.slice(3).map(item => (
-              <Link
+              <button
                 key={item.to}
-                to={item.to}
-                onClick={() => setShowMobileMenu(false)}
+                onTouchEnd={(e) => { e.preventDefault(); setShowMobileMenu(false); navigate(item.to); }}
+                onClick={() => { setShowMobileMenu(false); navigate(item.to); }}
                 className={clsx(
-                  "flex items-center gap-3 px-4 py-3 border-b border-gray-50",
+                  "flex items-center gap-3 px-4 py-3 w-full border-b border-gray-50 text-left",
                   item.match ? "bg-blue-50 text-blue-600" : "text-gray-700 hover:bg-gray-50"
                 )}
               >
@@ -294,7 +295,7 @@ export function Layout() {
                 {item.badge !== undefined && item.badge > 0 && (
                   <span className="ml-auto bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{item.badge}</span>
                 )}
-              </Link>
+              </button>
             ))}
             {!isStudent && (
               <button
