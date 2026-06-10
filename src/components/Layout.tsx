@@ -223,7 +223,7 @@ export function Layout() {
       {/* Mobile Bottom Tab Bar */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 safe-area-pb">
         <div className="flex justify-around items-center h-14">
-          {navItems.slice(0, 4).map(item => (
+          {navItems.slice(0, 3).map(item => (
             <Link
               key={item.to}
               to={item.to}
@@ -245,25 +245,35 @@ export function Layout() {
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           ))}
-          {/* More menu for overflow items */}
+          {/* More menu for overflow items (if any) */}
           {(() => {
-            const overflow = navItems.slice(4);
-            if (overflow.length === 0) return null;
-            return (
-              <button
-                onClick={() => setShowMobileMenu(!showMobileMenu)}
-                className={clsx(
-                  "flex flex-col items-center justify-center gap-0.5 flex-1 h-full relative pt-1",
-                  overflow.some(item => item.match) ? "text-blue-600" : "text-gray-400"
-                )}
-              >
-                <div className="relative">
-                  {showMobileMenu ? <X className="w-5 h-5" /> : <MoreVertical className="w-5 h-5" />}
-                </div>
-                <span className="text-[10px] font-medium">More</span>
-              </button>
-            );
+            const overflow = navItems.slice(3);
+            if (overflow.length > 0) {
+              return (
+                <button
+                  onClick={() => setShowMobileMenu(!showMobileMenu)}
+                  className={clsx(
+                    "flex flex-col items-center justify-center gap-0.5 flex-1 h-full relative pt-1",
+                    overflow.some(item => item.match) ? "text-blue-600" : "text-gray-400"
+                  )}
+                >
+                  <div className="relative">
+                    {showMobileMenu ? <X className="w-5 h-5" /> : <MoreVertical className="w-5 h-5" />}
+                  </div>
+                  <span className="text-[10px] font-medium">More</span>
+                </button>
+              );
+            }
+            return null;
           })()}
+          {/* Logout — always visible */}
+          <button
+            onClick={logout}
+            className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full pt-1 text-gray-400"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Sign Out</span>
+          </button>
         </div>
 
         {/* Mobile overflow menu */}
