@@ -519,13 +519,13 @@ export function InstructorCalendar() {
       </div>
 
       {/* Proposed target slot for pending reschedule */}
-      {pending && slot.lesson?.proposedDate && slot.date !== slot.lesson.date && (
+      {pending && slot.lesson?.proposedDate && slot.lesson.proposedDate === slot.date && slot.lesson.proposedStartTime === slot.time && (
         <div className="text-[10px] text-amber-600 font-medium bg-amber-50 rounded p-2 border border-dashed border-amber-200">
-          Pending move from {slot.lesson.date} ({slot.lesson.startTime})
+          Pending move to here
         </div>
       )}
 
-      {!slot.isAvailable && slot.lesson && !(pending && slot.lesson.proposedDate && slot.date !== slot.lesson.date) && (
+      {!slot.isAvailable && slot.lesson && !(pending && slot.lesson.proposedDate && slot.lesson.proposedDate === slot.date && slot.lesson.proposedStartTime === slot.time) && (
         <div className={clsx(
           "flex flex-col gap-1 text-gray-700 bg-white rounded p-2 border shadow-sm",
           pending ? "border-amber-200" : "border-blue-100",

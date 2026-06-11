@@ -254,8 +254,8 @@ export function StudentCalendar() {
           )}
           {slotList.map((slot, idx) => {
             const isPending = slot.lesson?.status === "reschedule_pending";
-            const isOriginalPending = isPending && slot.isMine && slot.lesson?.date === slot.date && slot.lesson?.startTime === slot.time;
-            const isTargetPending = isPending && slot.isMine && !isOriginalPending;
+            const isOriginalPending = isPending && slot.isMine && !(slot.lesson?.proposedDate === slot.date && slot.lesson?.proposedStartTime === slot.time);
+            const isTargetPending = isPending && slot.isMine && slot.lesson?.proposedDate === slot.date && slot.lesson?.proposedStartTime === slot.time;
             const isClickable = rescheduleMode ? slot.isAvailable : (slot.isAvailable || slot.isMine);
             return (
               <button
