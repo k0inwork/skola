@@ -254,6 +254,8 @@ export function StudentCalendar() {
           )}
           {slotList.map((slot, idx) => {
             const isPending = slot.lesson?.status === "reschedule_pending";
+            const isOriginalPending = isPending && slot.isMine && slot.lesson?.date === slot.date && slot.lesson?.startTime === slot.time;
+            const isTargetPending = isPending && slot.isMine && !isOriginalPending;
             const isClickable = rescheduleMode ? slot.isAvailable : (slot.isAvailable || slot.isMine);
             return (
               <button
@@ -262,22 +264,24 @@ export function StudentCalendar() {
                 onClick={() => handleSlotClick(slot)}
                 className={clsx(
                   "w-full rounded-lg text-left border transition-colors p-4 min-h-[60px]",
-                  isPending && slot.isMine && !rescheduleMode
+                  isOriginalPending && !rescheduleMode
                     ? "bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300 border-dashed"
-                    : slot.isAvailable
-                      ? rescheduleMode
-                        ? "bg-emerald-200 hover:bg-emerald-300 text-emerald-900 border-emerald-400 ring-2 ring-emerald-400/50"
-                        : "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200"
-                      : slot.isMine && !rescheduleMode
-                        ? "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300"
-                        : "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-100"
+                    : isTargetPending && !rescheduleMode
+                      ? "bg-amber-50 text-amber-500 border-amber-200 border-dashed cursor-default"
+                      : slot.isAvailable
+                        ? rescheduleMode
+                          ? "bg-emerald-200 hover:bg-emerald-300 text-emerald-900 border-emerald-400 ring-2 ring-emerald-400/50"
+                          : "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200"
+                        : slot.isMine && !rescheduleMode
+                          ? "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300"
+                          : "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-100"
                 )}
               >
                 <div className="font-bold text-sm">{slot.time}–{slot.endTime}</div>
                 <div className="text-sm mt-1">
-                  {rescheduleMode && slot.isAvailable ? "Move Here" : slot.isAvailable ? "Book" : isPending && slot.isMine && !rescheduleMode ? "Move Pending" : slot.isMine && !rescheduleMode ? "My Lesson" : "Taken"}
+                  {rescheduleMode && slot.isAvailable ? "Move Here" : slot.isAvailable ? "Book" : isOriginalPending && !rescheduleMode ? "Move Pending" : isTargetPending && !rescheduleMode ? "Awaiting Confirmation" : slot.isMine && !rescheduleMode ? "My Lesson" : "Taken"}
                 </div>
-                {isPending && slot.isMine && slot.lesson?.proposedDate && (
+                {isOriginalPending && slot.lesson?.proposedDate && (
                   <div className="text-xs text-amber-600 font-medium mt-1">
                     → {slot.lesson.proposedDate} {slot.lesson.proposedStartTime}–{slot.lesson.proposedEndTime}
                   </div>
@@ -334,6 +338,8 @@ export function StudentCalendar() {
                     const slotTop = timeToY(slot.time);
                     const slotHeight = timeToY(slot.endTime) - slotTop;
                     const isPending = slot.lesson?.status === "reschedule_pending";
+                    const isOriginalPending = isPending && slot.isMine && slot.lesson?.date === slot.date && slot.lesson?.startTime === slot.time;
+                    const isTargetPending = isPending && slot.isMine && !isOriginalPending;
                     const isClickable = rescheduleMode ? slot.isAvailable : (slot.isAvailable || slot.isMine);
 
                     return (
@@ -343,23 +349,25 @@ export function StudentCalendar() {
                         onClick={() => handleSlotClick(slot)}
                         className={clsx(
                           "absolute left-1 right-1 rounded text-left text-[10px] border transition-colors",
-                          isPending && slot.isMine && !rescheduleMode
+                          isOriginalPending && !rescheduleMode
                             ? "bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300 border-dashed cursor-pointer"
-                            : slot.isAvailable
-                              ? rescheduleMode
-                                ? "bg-emerald-200 hover:bg-emerald-300 text-emerald-900 border-emerald-400 cursor-pointer ring-2 ring-emerald-400/50"
-                                : "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200 cursor-pointer"
-                              : slot.isMine && !rescheduleMode
-                                ? "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 cursor-pointer"
-                                : "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-100"
+                            : isTargetPending && !rescheduleMode
+                              ? "bg-amber-50 text-amber-500 border-amber-200 border-dashed cursor-default"
+                              : slot.isAvailable
+                                ? rescheduleMode
+                                  ? "bg-emerald-200 hover:bg-emerald-300 text-emerald-900 border-emerald-400 cursor-pointer ring-2 ring-emerald-400/50"
+                                  : "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200 cursor-pointer"
+                                : slot.isMine && !rescheduleMode
+                                  ? "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 cursor-pointer"
+                                  : "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-100"
                         )}
                         style={{ top: slotTop, height: slotHeight - 2 }}
                       >
                         <div className="px-1.5 py-0.5 font-bold">{slot.time}–{slot.endTime}</div>
                         <div className="px-1.5 pb-0.5">
-                          {rescheduleMode && slot.isAvailable ? "Move Here" : slot.isAvailable ? "Book" : isPending && slot.isMine && !rescheduleMode ? "Move Pending" : slot.isMine && !rescheduleMode ? "My Lesson" : "Taken"}
+                          {rescheduleMode && slot.isAvailable ? "Move Here" : slot.isAvailable ? "Book" : isOriginalPending && !rescheduleMode ? "Move Pending" : isTargetPending && !rescheduleMode ? "Awaiting" : slot.isMine && !rescheduleMode ? "My Lesson" : "Taken"}
                         </div>
-                        {isPending && slot.isMine && slot.lesson?.proposedDate && (
+                        {isOriginalPending && slot.lesson?.proposedDate && (
                           <div className="px-1.5 pb-0.5 text-[9px] text-amber-600 font-medium">
                             → {slot.lesson.proposedDate} {slot.lesson.proposedStartTime}–{slot.lesson.proposedEndTime}
                           </div>
