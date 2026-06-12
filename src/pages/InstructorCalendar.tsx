@@ -1589,6 +1589,7 @@ export function InstructorCalendar() {
         <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white rounded-lg p-6">Ielādē karti...</div></div>}>
           <LocationMapPicker
             defaultCity={settingsForm.city}
+            token={token}
             onClose={() => setIsMapPickerOpen(false)}
             onSaved={async (loc) => {
               const res = await fetch("/api/calendar/locations", {

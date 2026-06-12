@@ -22,6 +22,7 @@ interface LocationMapPickerProps {
   onClose: () => void;
   onSaved: (location: { id: string; name: string; city: string }) => void;
   defaultCity?: string;
+  token?: string;
 }
 
 function MapClickHandler({ onClick }: { onClick: (lat: number, lng: number) => void }) {
@@ -46,7 +47,7 @@ function FlyToCity({ city }: { city: string }) {
   return null;
 }
 
-export default function LocationMapPicker({ onClose, onSaved, defaultCity }: LocationMapPickerProps) {
+export default function LocationMapPicker({ onClose, onSaved, defaultCity, token }: LocationMapPickerProps) {
   const [city, setCity] = useState(defaultCity || "Olaine");
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -88,7 +89,7 @@ export default function LocationMapPicker({ onClose, onSaved, defaultCity }: Loc
     try {
       const res = await fetch("/api/calendar/locations", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ name: name.trim(), address, lat: marker.lat, lng: marker.lng, city }),
       });
       const loc = await res.json();
