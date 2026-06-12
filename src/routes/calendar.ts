@@ -9,6 +9,22 @@ import { sendNewMessageEmail } from "../lib/mail.js";
 
 const router = Router();
 
+// Tile proxy for Leaflet maps (no auth needed)
+router.get("/tiles/:z/:x/:y", async (req, res) => {
+  try {
+    const { z, x, y } = req.params;
+    const tileRes = await fetch(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`, {
+      headers: { "User-Agent": "OlainesAutoskola/1.0" },
+    });
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    const buf = Buffer.from(await tileRes.arrayBuffer());
+    res.send(buf);
+  } catch {
+    res.status(500).send("Tile fetch failed");
+  }
+});
+
 router.use(requireAuth);
 
 // --- Helpers ---
@@ -1217,22 +1233,6 @@ router.delete("/slots/:slotId", async (req, res) => {
   } catch (err) {
     console.error("Delete slot error:", err);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Tile proxy for Leaflet maps
-router.get("/tiles/:z/:x/:y", async (req, res) => {
-  try {
-    const { z, x, y } = req.params;
-    const tileRes = await fetch(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`, {
-      headers: { "User-Agent": "OlainesAutoskola/1.0" },
-    });
-    res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    const buf = Buffer.from(await tileRes.arrayBuffer());
-    res.send(buf);
-  } catch {
-    res.status(500).send("Tile fetch failed");
   }
 });
 
