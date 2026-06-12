@@ -1,9 +1,9 @@
-import React, { useState, useEffect, FormEvent, useRef, useCallback } from "react";
+import React, { useState, useEffect, FormEvent, useRef, useCallback, lazy, Suspense } from "react";
 import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
 import { toastSuccess, toastError, toast } from "../lib/notify";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import LocationMapPicker from "../components/LocationMapPicker";
+const LocationMapPicker = lazy(() => import("../components/LocationMapPicker"));
 import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
@@ -1586,20 +1586,22 @@ export function InstructorCalendar() {
       )}
 
       {isMapPickerOpen && (
-        <LocationMapPicker
-          defaultCity={settingsForm.city}
-          onClose={() => setIsMapPickerOpen(false)}
-          onSaved={async (loc) => {
-            const res = await fetch("/api/calendar/locations", {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            if (res.ok) {
-              const locs = await res.json();
-              setLocations(locs);
-              setSettingsForm(f => ({ ...f, location: loc.name }));
-            }
-          }}
-        />
+        <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white rounded-lg p-6">Ielādē karti...</div></div>}>
+          <LocationMapPicker
+            defaultCity={settingsForm.city}
+            onClose={() => setIsMapPickerOpen(false)}
+            onSaved={async (loc) => {
+              const res = await fetch("/api/calendar/locations", {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (res.ok) {
+                const locs = await res.json();
+                setLocations(locs);
+                setSettingsForm(f => ({ ...f, location: loc.name }));
+              }
+            }}
+          />
+        </Suspense>
       )}
 
       <ConfirmDialog
