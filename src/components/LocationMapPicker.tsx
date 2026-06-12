@@ -145,7 +145,7 @@ export default function LocationMapPicker({ onClose, onSaved, defaultCity }: Loc
             <MapContainer center={center} zoom={14} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                url="/api/calendar/tiles/{z}/{x}/{y}"
               />
               <MapClickHandler onClick={handleMapClick} />
               <FlyToCity city={city} />
