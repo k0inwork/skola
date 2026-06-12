@@ -894,8 +894,8 @@ export function InstructorCalendar() {
                     <div className={clsx("text-xs font-medium", isToday ? "text-blue-600" : "text-gray-600")}>{format(d, "EEE")}</div>
                     <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
                     <div className="flex gap-1 mt-0.5 flex-wrap justify-center min-h-[18px]">
-                      {wDay?.location && (
-                        <span className="text-[10px] leading-tight bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{wDay.location}</span>
+                      {wDay?.city && (
+                        <span className="text-[10px] leading-tight bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{wDay.city}</span>
                       )}
                       {wDay?.vehicle && (
                         <span className="text-[10px] leading-tight bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded capitalize">{wDay.vehicle}</span>
@@ -1065,8 +1065,8 @@ export function InstructorCalendar() {
             ) : (
               <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full font-medium">Off</span>
             )}
-            {wDay?.location && (
-              <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full font-medium ml-1">{wDay.location}</span>
+            {wDay?.city && (
+              <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full font-medium ml-1">{wDay.city}</span>
             )}
             {wDay?.vehicle && (
               <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium ml-1 capitalize">{wDay.vehicle}</span>
