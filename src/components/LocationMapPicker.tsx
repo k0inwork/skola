@@ -141,8 +141,8 @@ export default function LocationMapPicker({ onClose, onSaved, defaultCity }: Loc
               className="w-full border rounded px-3 py-2"
             />
           </div>
-          <div className="h-64 rounded overflow-hidden border">
-            <MapContainer center={center} zoom={14} scrollWheelZoom className="h-full w-full">
+          <div className="rounded overflow-hidden border" style={{ height: 320 }}>
+            <MapContainer center={center} zoom={14} scrollWheelZoom style={{ height: "100%", width: "100%" }}>
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
