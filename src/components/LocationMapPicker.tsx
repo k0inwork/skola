@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -35,10 +35,14 @@ function MapClickHandler({ onClick }: { onClick: (lat: number, lng: number) => v
 
 function FlyToCity({ city }: { city: string }) {
   const map = useMap();
-  const center = CITY_CENTERS[city];
-  if (center) {
-    map.flyTo(center, 14, { duration: 1 });
-  }
+  const prevCity = useRef(city);
+  useEffect(() => {
+    if (prevCity.current !== city) {
+      const center = CITY_CENTERS[city];
+      if (center) map.flyTo(center, 14, { duration: 1 });
+      prevCity.current = city;
+    }
+  }, [city, map]);
   return null;
 }
 
