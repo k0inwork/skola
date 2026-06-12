@@ -256,9 +256,9 @@ export function StudentCalendar() {
           <div className="text-lg font-bold text-gray-900">{format(currentDate, "EEEE, MMMM d")}</div>
           {workingDays[format(currentDate, "yyyy-MM-dd")] && (
             <div className="flex items-center justify-center gap-2 mt-1 text-xs text-gray-500">
-              {workingDays[format(currentDate, "yyyy-MM-dd")].location && (
+              {workingDays[format(currentDate, "yyyy-MM-dd")].city && (
                 <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
-                  {workingDays[format(currentDate, "yyyy-MM-dd")].location}
+                  {workingDays[format(currentDate, "yyyy-MM-dd")].city}
                 </span>
               )}
               {workingDays[format(currentDate, "yyyy-MM-dd")].vehicle && (
@@ -300,8 +300,14 @@ export function StudentCalendar() {
               >
                 <div className="font-bold text-sm">{slot.time}–{slot.endTime}</div>
                 <div className="text-sm mt-1">
-                  {rescheduleMode && slot.isAvailable ? "Move Here" : slot.isAvailable ? "Book" : isOriginalPending && !rescheduleMode ? "Move Pending" : isTargetPending && !rescheduleMode ? "Awaiting Confirmation" : slot.isMine && !rescheduleMode ? "My Lesson" : "Taken"}
+                  {rescheduleMode && slot.isAvailable ? "Pārcelt šeit" : slot.isAvailable ? "Rezervēt" : isOriginalPending && !rescheduleMode ? "Pārcelšana" : isTargetPending && !rescheduleMode ? "Gaida apstiprinājumu" : slot.isMine && !rescheduleMode ? "Mana nodarbība" : "Aizņemts"}
                 </div>
+                {(workingDays[slot.date]?.location || slot.lesson?.location) && (
+                  <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                    <span>📍</span>
+                    <span>{slot.lesson?.location || workingDays[slot.date]?.location}</span>
+                  </div>
+                )}
                 {isOriginalPending && slot.lesson?.proposedDate && (
                   <div className="text-xs text-amber-600 font-medium mt-1">
                     → {slot.lesson.proposedDate} {slot.lesson.proposedStartTime}–{slot.lesson.proposedEndTime}
@@ -347,9 +353,9 @@ export function StudentCalendar() {
                   <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
                   {workingDays[format(d, "yyyy-MM-dd")] && (
                     <div className="flex flex-col items-center gap-0.5 mt-0.5">
-                      {workingDays[format(d, "yyyy-MM-dd")].location && (
+                      {workingDays[format(d, "yyyy-MM-dd")].city && (
                         <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-px rounded-full leading-tight">
-                          {workingDays[format(d, "yyyy-MM-dd")].location}
+                          {workingDays[format(d, "yyyy-MM-dd")].city}
                         </span>
                       )}
                       {workingDays[format(d, "yyyy-MM-dd")].vehicle && (
