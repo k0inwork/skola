@@ -3,6 +3,7 @@ import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
 import { toastSuccess, toastError, toast } from "../lib/notify";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import LocationMapPicker from "../components/LocationMapPicker";
 import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
@@ -16,6 +17,7 @@ interface WorkingDay {
   slotDurationMin: number;
   location: string | null;
   vehicle: string | null;
+  city: string | null;
 }
 
 interface BookedLesson {
@@ -46,6 +48,7 @@ interface Location {
   address: string | null;
   lat: string | null;
   lng: string | null;
+  city: string | null;
 }
 
 interface Slot {
@@ -86,6 +89,7 @@ export function InstructorCalendar() {
 
   // Locations
   const [locations, setLocations] = useState<Location[]>([]);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
 
   // Settings Modal State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -97,6 +101,7 @@ export function InstructorCalendar() {
     slotDurationMin: 90,
     location: "" as string | null,
     vehicle: "" as string | null,
+    city: "Olaine" as string,
   });
 
   // Reschedule state
@@ -220,9 +225,9 @@ export function InstructorCalendar() {
     const existing = workingDays.find(d => d.date === dateStr);
     setEditingDate(date);
     if (existing) {
-      setSettingsForm({ isWorking: existing.isWorking, startTime: existing.startTime, endTime: existing.endTime, slotDurationMin: existing.slotDurationMin, location: existing.location, vehicle: existing.vehicle });
+      setSettingsForm({ isWorking: existing.isWorking, startTime: existing.startTime, endTime: existing.endTime, slotDurationMin: existing.slotDurationMin, location: existing.location, vehicle: existing.vehicle, city: (existing as any).city || "Olaine" });
     } else {
-      setSettingsForm({ isWorking: true, startTime: "09:00", endTime: "17:00", slotDurationMin: 90, location: null, vehicle: null });
+      setSettingsForm({ isWorking: true, startTime: "09:00", endTime: "17:00", slotDurationMin: 90, location: null, vehicle: null, city: "Olaine" });
     }
     setIsSettingsOpen(true);
   };
@@ -1522,19 +1527,41 @@ export function InstructorCalendar() {
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-1">Lesson duration: 90 min (fixed)</p>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Pilsēta</label>
+                    <select
+                      value={settingsForm.city}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, city: e.target.value, location: null })}
+                      className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
+                    >
+                      <option value="Olaine">Olaine</option>
+                      <option value="Rīga">Rīga</option>
+                      <option value="Jelgava">Jelgava</option>
+                    </select>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
-                      <select
-                        value={settingsForm.location || ""}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, location: e.target.value || null })}
-                        className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
-                      >
-                        <option value="">— none —</option>
-                        {locations.map((loc: { id: string; name: string }) => (
-                          <option key={loc.id} value={loc.name}>{loc.name}</option>
-                        ))}
-                      </select>
+                      <div className="flex gap-1">
+                        <select
+                          value={settingsForm.location || ""}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, location: e.target.value || null })}
+                          className="flex-1 px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
+                        >
+                          <option value="">— none —</option>
+                          {locations
+                            .filter((loc: any) => loc.city === settingsForm.city)
+                            .map((loc: { id: string; name: string }) => (
+                              <option key={loc.id} value={loc.name}>{loc.name}</option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setIsMapPickerOpen(true)}
+                          className="px-2 py-2.5 border rounded-lg text-blue-600 hover:bg-blue-50 min-h-[44px]"
+                          title="Pievienot vietu"
+                        >+</button>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Vehicle</label>
@@ -1558,6 +1585,23 @@ export function InstructorCalendar() {
             </form>
           </div>
         </div>
+      )}
+
+      {isMapPickerOpen && (
+        <LocationMapPicker
+          defaultCity={settingsForm.city}
+          onClose={() => setIsMapPickerOpen(false)}
+          onSaved={async (loc) => {
+            const res = await fetch("/api/calendar/locations", {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+              const locs = await res.json();
+              setLocations(locs);
+              setSettingsForm(f => ({ ...f, location: loc.name }));
+            }
+          }}
+        />
       )}
 
       <ConfirmDialog

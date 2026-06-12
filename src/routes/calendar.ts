@@ -107,7 +107,7 @@ router.get("/working-days", async (req, res) => {
 // Upsert working day — regenerates slots for that day
 router.post("/working-days", validate(workingDaySchema), async (req, res) => {
   try {
-    const { instructorId, date, isWorking, startTime, endTime, location, vehicle } = req.body;
+    const { instructorId, date, isWorking, startTime, endTime, location, vehicle, city } = req.body;
     const slotDurationMin = req.body.slotDurationMin || 90;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
@@ -120,7 +120,7 @@ router.post("/working-days", validate(workingDaySchema), async (req, res) => {
       eq(instructorWorkingDays.date, date)
     ));
 
-    const dayData = { isWorking, startTime, endTime, slotDurationMin, location: location || null, vehicle: vehicle || null };
+    const dayData = { isWorking, startTime, endTime, slotDurationMin, location: location || null, vehicle: vehicle || null, city: city || null };
 
     if (existing.length > 0) {
       await db.update(instructorWorkingDays)
@@ -1220,11 +1220,23 @@ router.delete("/slots/:slotId", async (req, res) => {
   }
 });
 
+// Predefined cities
+router.get("/locations/cities", (_req, res) => {
+  res.json(["Olaine", "Rīga", "Jelgava"]);
+});
+
 // Locations CRUD
 router.get("/locations", async (req, res) => {
   try {
-    const allLocations = await db.select().from(locations).orderBy(locations.name);
-    res.json(allLocations);
+    const city = req.query.city as string | undefined;
+    let query = db.select().from(locations).orderBy(locations.name);
+    if (city) {
+      const allLocations = await db.select().from(locations).where(eq(locations.city, city)).orderBy(locations.name);
+      res.json(allLocations);
+    } else {
+      const allLocations = await query;
+      res.json(allLocations);
+    }
   } catch (err) {
     console.error("List locations error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -1237,12 +1249,12 @@ router.post("/locations", validate(createLocationSchema), async (req, res) => {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
-    const { name, address, lat, lng } = req.body;
+    const { name, address, lat, lng, city } = req.body;
     if (!name) {
       res.status(400).json({ error: "Name is required" });
       return;
     }
-    const [loc] = await db.insert(locations).values({ name, address, lat, lng }).returning();
+    const [loc] = await db.insert(locations).values({ name, address, lat, lng, city: city || "Olaine" }).returning();
     res.status(201).json(loc);
   } catch (err) {
     console.error("Create location error:", err);

@@ -47,6 +47,7 @@ export function StudentCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedInstructor, setSelectedInstructor] = useState("");
   const [dbSlots, setDbSlots] = useState<Slot[]>([]);
+  const [workingDays, setWorkingDays] = useState<Record<string, { city: string | null; vehicle: string | null; location: string | null }>>({});
   const [loading, setLoading] = useState(false);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [bookingSlot, setBookingSlot] = useState<Slot | null>(null);
@@ -112,6 +113,12 @@ export function StudentCalendar() {
       });
       if (res.ok) {
         const data = await res.json();
+        // Store working days keyed by date for day headers
+        const wdMap: Record<string, { city: string | null; vehicle: string | null; location: string | null }> = {};
+        for (const wd of data.workingDays || []) {
+          wdMap[wd.date] = { city: wd.city, vehicle: wd.vehicle, location: wd.location };
+        }
+        setWorkingDays(wdMap);
         setDbSlots(data.slots.map((s: any) => ({
           id: s.id,
           time: s.startTime,
@@ -247,6 +254,20 @@ export function StudentCalendar() {
       >
         <div className="p-4 border-b border-gray-100 text-center">
           <div className="text-lg font-bold text-gray-900">{format(currentDate, "EEEE, MMMM d")}</div>
+          {workingDays[format(currentDate, "yyyy-MM-dd")] && (
+            <div className="flex items-center justify-center gap-2 mt-1 text-xs text-gray-500">
+              {workingDays[format(currentDate, "yyyy-MM-dd")].city && (
+                <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
+                  {workingDays[format(currentDate, "yyyy-MM-dd")].city}
+                </span>
+              )}
+              {workingDays[format(currentDate, "yyyy-MM-dd")].vehicle && (
+                <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                  {workingDays[format(currentDate, "yyyy-MM-dd")].vehicle === "auto" ? "Auto" : "Manual"}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="p-3 space-y-3">
           {slotList.length === 0 && (
@@ -319,11 +340,25 @@ export function StudentCalendar() {
               <div key={i} className="flex flex-col">
                 {/* Day header */}
                 <div className={clsx(
-                  "h-[60px] border-b border-gray-100 text-center shrink-0 flex flex-col items-center justify-center",
+                  "border-b border-gray-100 text-center shrink-0 flex flex-col items-center justify-center py-1",
                   isToday ? "bg-blue-50" : "bg-white"
                 )}>
                   <div className={clsx("text-xs font-medium", isToday ? "text-blue-600" : "text-gray-600")}>{format(d, "EEE")}</div>
                   <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
+                  {workingDays[format(d, "yyyy-MM-dd")] && (
+                    <div className="flex flex-col items-center gap-0.5 mt-0.5">
+                      {workingDays[format(d, "yyyy-MM-dd")].city && (
+                        <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-px rounded-full leading-tight">
+                          {workingDays[format(d, "yyyy-MM-dd")].city}
+                        </span>
+                      )}
+                      {workingDays[format(d, "yyyy-MM-dd")].vehicle && (
+                        <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-px rounded-full leading-tight">
+                          {workingDays[format(d, "yyyy-MM-dd")].vehicle === "auto" ? "Auto" : "Manual"}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Grid body */}

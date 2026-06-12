@@ -116,6 +116,7 @@ export const instructorWorkingDays = pgTable("instructor_working_days", {
   slotDurationMin: integer("slot_duration_min").default(60),
   location: text("location"),
   vehicle: text("vehicle"),
+  city: text("city"),
 });
 
 export const payments = pgTable("payments", {
@@ -161,6 +162,7 @@ export const locations = pgTable("locations", {
   address: text("address"),
   lat: text("latitude"),
   lng: text("longitude"),
+  city: text("city").notNull().default("Olaine"),
   createdAt: timestamp("created_at")
     .notNull()
     .defaultNow(),

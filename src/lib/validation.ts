@@ -81,6 +81,7 @@ export const workingDaySchema = z.object({
   slotDurationMin: z.number().int().min(15).max(480).optional(),
   location: z.string().max(200).optional().nullable(),
   vehicle: z.string().max(100).optional().nullable(),
+  city: z.string().max(100).optional().nullable(),
 });
 
 export const copyWeekSchema = z.object({
@@ -94,6 +95,7 @@ export const createLocationSchema = z.object({
   address: z.string().max(300).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
+  city: z.string().max(100).optional(),
 });
 
 export function validate(schema: ZodSchema) {

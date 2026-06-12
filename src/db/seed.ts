@@ -1,5 +1,5 @@
 import { db } from "./index.js";
-import { users, students, lessons, payments, progress, notes, enrollments } from "./schema.js";
+import { users, students, lessons, payments, progress, notes, enrollments, locations } from "./schema.js";
 import { hash } from "bcryptjs";
 import { eq, ne, and } from "drizzle-orm";
 
@@ -48,6 +48,20 @@ async function seed() {
         userId: studentUser.id,
         status: "registered"
     });
+
+    // Seed locations per city (only if table is empty)
+    const existingLocations = await db.select().from(locations);
+    if (existingLocations.length === 0) {
+        await db.insert(locations).values([
+            { name: "Olaines autoosta", city: "Olaine", address: "Olaine, Rīgas iela 1" },
+            { name: "Olaines centrs", city: "Olaine", address: "Olaine, Centra laukums" },
+            { name: "Rīgas centrālā stacija", city: "Rīga", address: "Rīga, Stacijas laukums 2" },
+            { name: "Rīgas autoosta", city: "Rīga", address: "Rīga, Prāgas iela 1" },
+            { name: "Jelgavas autoosta", city: "Jelgava", address: "Jelgava, Katoļu iela 18" },
+            { name: "Jelgavas centrs", city: "Jelgava", address: "Jelgava, Lielā iela" },
+        ]);
+        console.log("Seeded default locations.");
+    }
 
     console.log("Seeding complete.");
 }
