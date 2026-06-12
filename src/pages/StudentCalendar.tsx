@@ -256,9 +256,9 @@ export function StudentCalendar() {
           <div className="text-lg font-bold text-gray-900">{format(currentDate, "EEEE, MMMM d")}</div>
           {workingDays[format(currentDate, "yyyy-MM-dd")] && (
             <div className="flex items-center justify-center gap-2 mt-1 text-xs text-gray-500">
-              {workingDays[format(currentDate, "yyyy-MM-dd")].city && (
+              {workingDays[format(currentDate, "yyyy-MM-dd")].location && (
                 <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
-                  {workingDays[format(currentDate, "yyyy-MM-dd")].city}
+                  {workingDays[format(currentDate, "yyyy-MM-dd")].location}
                 </span>
               )}
               {workingDays[format(currentDate, "yyyy-MM-dd")].vehicle && (
@@ -347,9 +347,9 @@ export function StudentCalendar() {
                   <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
                   {workingDays[format(d, "yyyy-MM-dd")] && (
                     <div className="flex flex-col items-center gap-0.5 mt-0.5">
-                      {workingDays[format(d, "yyyy-MM-dd")].city && (
+                      {workingDays[format(d, "yyyy-MM-dd")].location && (
                         <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-px rounded-full leading-tight">
-                          {workingDays[format(d, "yyyy-MM-dd")].city}
+                          {workingDays[format(d, "yyyy-MM-dd")].location}
                         </span>
                       )}
                       {workingDays[format(d, "yyyy-MM-dd")].vehicle && (
