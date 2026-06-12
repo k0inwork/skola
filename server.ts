@@ -47,7 +47,15 @@ async function startServer() {
   app.set("io", io);
 
   app.use(helmet({
-    contentSecurityPolicy: process.env.NODE_ENV === "production" ? undefined : false,
+    contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https://unpkg.com"],
+        connectSrc: ["'self'", "https://nominatim.openstreetmap.org"],
+      },
+    } : false,
   }));
   app.use(cookieParser());
   app.use(cors({
