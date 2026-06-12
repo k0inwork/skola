@@ -1539,42 +1539,40 @@ export function InstructorCalendar() {
                       <option value="Jelgava">Jelgava</option>
                     </select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
-                      <div className="flex gap-1">
-                        <select
-                          value={settingsForm.location || ""}
-                          onChange={(e) => setSettingsForm({ ...settingsForm, location: e.target.value || null })}
-                          className="flex-1 px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
-                        >
-                          <option value="">— none —</option>
-                          {locations
-                            .filter((loc: any) => loc.city === settingsForm.city)
-                            .map((loc: { id: string; name: string }) => (
-                              <option key={loc.id} value={loc.name}>{loc.name}</option>
-                            ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => setIsMapPickerOpen(true)}
-                          className="px-2 py-2.5 border rounded-lg text-blue-600 hover:bg-blue-50 min-h-[44px]"
-                          title="Pievienot vietu"
-                        >+</button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Vehicle</label>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Vieta</label>
+                    <div className="flex gap-2">
                       <select
-                        value={settingsForm.vehicle || ""}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, vehicle: e.target.value || null })}
-                        className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
+                        value={settingsForm.location || ""}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, location: e.target.value || null })}
+                        className="flex-1 px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
                       >
-                        <option value="">— none —</option>
-                        <option value="auto">Auto</option>
-                        <option value="manual">Manual</option>
+                        <option value="">— nav —</option>
+                        {locations
+                          .filter((loc: any) => loc.city === settingsForm.city)
+                          .map((loc: { id: string; name: string }) => (
+                            <option key={loc.id} value={loc.name}>{loc.name}</option>
+                          ))}
                       </select>
+                      <button
+                        type="button"
+                        onClick={() => setIsMapPickerOpen(true)}
+                        className="px-3 py-2.5 border rounded-lg text-blue-600 hover:bg-blue-50 min-h-[44px] text-sm font-medium whitespace-nowrap"
+                        title="Pievienot vietu"
+                      >+ Vieta</button>
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Pārnesumkārba</label>
+                    <select
+                      value={settingsForm.vehicle || ""}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, vehicle: e.target.value || null })}
+                      className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
+                    >
+                      <option value="">— nav —</option>
+                      <option value="auto">Automāts</option>
+                      <option value="manual">Mehāniskā</option>
+                    </select>
                   </div>
                 </>
               )}
