@@ -302,11 +302,10 @@ export function StudentCalendar() {
                 <div className="text-sm mt-1">
                   {rescheduleMode && slot.isAvailable ? "Pārcelt šeit" : slot.isAvailable ? "Rezervēt" : isOriginalPending && !rescheduleMode ? "Pārcelšana" : isTargetPending && !rescheduleMode ? "Gaida apstiprinājumu" : slot.isMine && !rescheduleMode ? "Mana nodarbība" : "Aizņemts"}
                 </div>
-                {(workingDays[slot.date]?.location || slot.lesson?.location) && (
-                  <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                    <span>📍</span>
-                    <span>{slot.lesson?.location || workingDays[slot.date]?.location}</span>
-                  </div>
+                {(slot.lesson?.location || workingDays[slot.date]?.location) && (
+                  <span className="inline-flex items-center gap-0.5 bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 text-xs font-medium mt-1">
+                    📍{slot.lesson?.location || workingDays[slot.date]?.location}
+                  </span>
                 )}
                 {isOriginalPending && slot.lesson?.proposedDate && (
                   <div className="text-xs text-amber-600 font-medium mt-1">
@@ -406,8 +405,13 @@ export function StudentCalendar() {
                       >
                         <div className="px-1.5 py-0.5 font-bold">{slot.time}–{slot.endTime}</div>
                         <div className="px-1.5 pb-0.5">
-                          {rescheduleMode && slot.isAvailable ? "Move Here" : slot.isAvailable ? "Book" : isOriginalPending && !rescheduleMode ? "Move Pending" : isTargetPending && !rescheduleMode ? "Awaiting" : slot.isMine && !rescheduleMode ? "My Lesson" : "Taken"}
+                          {rescheduleMode && slot.isAvailable ? "Pārcelt" : slot.isAvailable ? "Rezervēt" : isOriginalPending && !rescheduleMode ? "Pārcelšana" : isTargetPending && !rescheduleMode ? "Gaida" : slot.isMine && !rescheduleMode ? "Manējā" : "Aizņemts"}
                         </div>
+                        {(slot.lesson?.location || workingDays[slot.date]?.location) && (
+                          <div className="px-1.5 pb-0.5 text-[9px] text-purple-700 font-medium truncate">
+                            📍{slot.lesson?.location || workingDays[slot.date]?.location}
+                          </div>
+                        )}
                         {isOriginalPending && slot.lesson?.proposedDate && (
                           <div className="px-1.5 pb-0.5 text-[9px] text-amber-600 font-medium">
                             → {slot.lesson.proposedDate} {slot.lesson.proposedStartTime}–{slot.lesson.proposedEndTime}
