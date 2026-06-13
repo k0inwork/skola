@@ -1175,27 +1175,30 @@ export function InstructorCalendar() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Day info</label>
-                  <div className="flex flex-wrap gap-1 items-center min-h-[42px]">
-                    {(() => {
-                      const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
-                      return (
-                        <>
-                          {wd?.location && (
-                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />{wd.location}
-                            </span>
-                          )}
-                          {wd?.vehicle && (
-                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded capitalize">{wd.vehicle}</span>
-                          )}
-                          {!wd?.location && !wd?.vehicle && (
-                            <span className="text-xs text-gray-400">No day info</span>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Vieta</label>
+                  {(() => {
+                    const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
+                    const cityLocations = locations.filter((loc: any) => loc.city === wd?.city);
+                    return cityLocations.length > 0 ? (
+                      <select
+                        value={selectedSlot.lesson?.location || ""}
+                        onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                        className="w-full p-2.5 border rounded-lg text-sm min-h-[44px]"
+                      >
+                        <option value="">— nav —</option>
+                        {cityLocations.map((loc: any) => (
+                          <option key={loc.id} value={loc.name}>{loc.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex flex-wrap gap-1 items-center min-h-[42px]">
+                        {wd?.vehicle && (
+                          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded capitalize">{wd.vehicle}</span>
+                        )}
+                        <span className="text-xs text-gray-400">{wd?.city || "No city"}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1217,7 +1220,7 @@ export function InstructorCalendar() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => {
-                    handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", "", selectedSlot.lesson!.amount || "");
+                    handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "", selectedSlot.lesson!.amount || "");
                     setSelectedSlot(null);
                   }}
                   className="bg-slate-800 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-slate-900 transition min-h-[44px]"
@@ -1310,27 +1313,30 @@ export function InstructorCalendar() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Day info</label>
-                    <div className="flex flex-wrap gap-1 items-center min-h-[38px]">
-                      {(() => {
-                        const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
-                        return (
-                          <>
-                            {wd?.location && (
-                              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded flex items-center gap-1">
-                                <MapPin className="w-3 h-3" />{wd.location}
-                              </span>
-                            )}
-                            {wd?.vehicle && (
-                              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded capitalize">{wd.vehicle}</span>
-                            )}
-                            {!wd?.location && !wd?.vehicle && (
-                              <span className="text-xs text-gray-400">No day info</span>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Vieta</label>
+                    {(() => {
+                      const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
+                      const cityLocations = locations.filter((loc: any) => loc.city === wd?.city);
+                      return cityLocations.length > 0 ? (
+                        <select
+                          value={selectedSlot.lesson?.location || ""}
+                          onChange={(e) => setSelectedSlot({ ...selectedSlot, lesson: { ...selectedSlot.lesson!, location: e.target.value } })}
+                          className="w-full p-2 border rounded-lg text-sm"
+                        >
+                          <option value="">— nav —</option>
+                          {cityLocations.map((loc: any) => (
+                            <option key={loc.id} value={loc.name}>{loc.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="flex flex-wrap gap-1 items-center min-h-[38px]">
+                          {wd?.vehicle && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded capitalize">{wd.vehicle}</span>
+                          )}
+                          <span className="text-xs text-gray-400">{wd?.city || "No city"}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -1351,7 +1357,7 @@ export function InstructorCalendar() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
-                      handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", "", selectedSlot.lesson!.amount || "");
+                      handleUpdateLesson(selectedSlot.lesson!.id, selectedSlot.lesson!.notes || "", selectedSlot.lesson!.location || "", selectedSlot.lesson!.amount || "");
                       setSelectedSlot(null);
                     }}
                     className="flex-1 bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-900 transition"
