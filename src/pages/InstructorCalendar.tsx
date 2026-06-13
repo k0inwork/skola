@@ -557,7 +557,7 @@ export function InstructorCalendar() {
               <span className={clsx("text-gray-500", isMobileDayView ? "text-xs" : "text-[10px]")}>{slot.lesson.amount} EUR</span>
             )}
             {slot.lesson.location && (
-              <span className={clsx("text-gray-500 flex items-center gap-0.5", isMobileDayView ? "text-xs" : "text-[10px]")}>
+              <span className={clsx("inline-flex items-center gap-0.5 bg-purple-100 text-purple-700 rounded-full px-1.5 py-0.5 font-medium", isMobileDayView ? "text-xs" : "text-[9px]")}>
                 <MapPin className={isMobileDayView ? "w-3 h-3" : "w-2.5 h-2.5"} />{slot.lesson.location}
               </span>
             )}
@@ -978,6 +978,9 @@ export function InstructorCalendar() {
                                 {slot.lesson.studentFirstName} {slot.lesson.studentLastName}
                               </span>
                               <span className="text-gray-500">{sTime}–{eTime}</span>
+                              {slot.lesson.location && (
+                                <span className="text-purple-600 truncate block">📍{slot.lesson.location}</span>
+                              )}
                               {pending && <span className="ml-1 text-amber-600 font-bold">MOVE</span>}
                               {isNewLesson(slot.lesson) && <span className="ml-1 text-blue-600 font-bold">NEW</span>}
                             </div>
