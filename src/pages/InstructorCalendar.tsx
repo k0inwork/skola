@@ -665,7 +665,12 @@ export function InstructorCalendar() {
       setMovingSlotId(slot.id);
       setMoveDraft(draft);
       moveDraftRef.current = draft;
-      moveStartYRef.current = 0;
+      // Use current mouse position so the slot doesn't jump on first mousemove
+      const [sH, sM] = slot.time.split(":").map(Number);
+      const startMin = sH * 60 + sM;
+      const expectedY = GRID_START_HOUR * HOUR_HEIGHT + ((startMin - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
+      const gridTop = gridRef.current?.getBoundingClientRect().top ?? 0;
+      moveStartYRef.current = gridTop + expectedY;
       moveStartXRef.current = 0;
       moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime, date: slot.date };
       moveHasLessonRef.current = true;
