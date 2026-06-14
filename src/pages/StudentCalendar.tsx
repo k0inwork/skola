@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
-import { toastError } from "../lib/notify";
+import { toastError, toastSuccess } from "../lib/notify";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
@@ -213,6 +213,7 @@ export function StudentCalendar() {
         setRescheduleMode(false);
         setRescheduleFromSlot(null);
         fetchCalendarData();
+        toastSuccess("Pārcelšanas pieprasījums nosūtīts — gaida instruktora apstiprinājumu");
       } else {
         const body = await res.json();
         toastError(body.error || "Reschedule failed");
