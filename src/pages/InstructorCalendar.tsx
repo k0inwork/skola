@@ -477,7 +477,7 @@ export function InstructorCalendar() {
       onDragOver={handleDragOver}
       onClick={() => {
         if (moveJustFinishedRef.current || touchDragSlot) return;
-        if (slot.lesson && !pending) setSelectedSlot(slot);
+        if (slot.lesson) setSelectedSlot(slot);
       }}
       onTouchStart={(e) => handleSlotTouchStart(e, slot)}
       onTouchMove={handleSlotTouchMove}
@@ -955,7 +955,7 @@ export function InstructorCalendar() {
                               });
                             }
                           }}
-                          onClick={(e) => { e.stopPropagation(); if (moveJustFinishedRef.current) return; if (slot.lesson && !pending) setSelectedSlot(slot); }}
+                          onClick={(e) => { e.stopPropagation(); if (moveJustFinishedRef.current) return; if (slot.lesson) setSelectedSlot(slot); }}
                           className={clsx(
                             "absolute left-1.5 right-1.5 rounded border transition-all select-none",
                             isMoving ? "z-30 shadow-lg ring-2 ring-emerald-400 opacity-80" : slot.lesson ? "z-20" : "z-10",
