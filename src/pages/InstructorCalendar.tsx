@@ -1250,6 +1250,33 @@ export function InstructorCalendar() {
                   </button>
                 )}
               </div>
+              {selectedSlot.lesson.status === "reschedule_pending" && (
+                <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <div className="text-xs font-medium text-amber-800 mb-2">
+                    Pārcelšanas pieprasījums: {selectedSlot.lesson.proposedDate} {selectedSlot.lesson.proposedStartTime}–{selectedSlot.lesson.proposedEndTime}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        handleRescheduleRespond(selectedSlot.lesson!.id, "approve");
+                        setSelectedSlot(null);
+                      }}
+                      className="flex-1 bg-emerald-600 text-white px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 transition min-h-[44px]"
+                    >
+                      Apstiprināt
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleRescheduleRespond(selectedSlot.lesson!.id, "decline");
+                        setSelectedSlot(null);
+                      }}
+                      className="flex-1 bg-red-100 text-red-700 px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-red-200 transition min-h-[44px]"
+                    >
+                      Noraidīt
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 {!selectedSlot.lesson.paid && (
                   <button
@@ -1269,7 +1296,7 @@ export function InstructorCalendar() {
                     setCancelReason("");
                     setIsCancelOpen(true);
                   }}
-                  className="bg-white text-red-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-red-50 transition border border-red-200 min-h-[44px] ${!selectedSlot.lesson.paid ? '' : 'col-span-2'}"
+                  className="bg-white text-red-600 px-4 py-3 rounded-lg text-sm font-medium hover:bg-red-50 transition border border-red-200 min-h-[44px]"
                 >
                   Cancel Lesson
                 </button>
@@ -1376,6 +1403,33 @@ export function InstructorCalendar() {
                     </button>
                   )}
                 </div>
+                {selectedSlot.lesson.status === "reschedule_pending" && (
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <div className="text-xs font-medium text-amber-800 mb-2">
+                      Pārcelšanas pieprasījums: {selectedSlot.lesson.proposedDate} {selectedSlot.lesson.proposedStartTime}–{selectedSlot.lesson.proposedEndTime}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          handleRescheduleRespond(selectedSlot.lesson!.id, "approve");
+                          setSelectedSlot(null);
+                        }}
+                        className="flex-1 bg-emerald-600 text-white px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 transition"
+                      >
+                        Apstiprināt
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleRescheduleRespond(selectedSlot.lesson!.id, "decline");
+                          setSelectedSlot(null);
+                        }}
+                        className="flex-1 bg-red-100 text-red-700 px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-red-200 transition"
+                      >
+                        Noraidīt
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button
                     onClick={() => startDragFromDialog(selectedSlot)}
