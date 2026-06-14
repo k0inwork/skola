@@ -5,7 +5,7 @@ import { instructorWorkingDays, lessons, users, students, enrollments, slots } f
 import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate, bookSlotSchema, rescheduleSchema, respondRescheduleSchema, cancelLessonSchema, updateLessonSchema, moveSlotSchema, workingDaySchema, copyWeekSchema, createLocationSchema } from "../lib/validation.js";
-import { sendNewMessageEmail } from "../lib/mail.js";
+import { sendNewMessageEmail, sendLocationChangedEmail } from "../lib/mail.js";
 
 const router = Router();
 
@@ -425,9 +425,28 @@ router.post("/update-lesson/:lessonId", validate(updateLessonSchema), async (req
       return;
     }
 
+    const [existing] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Lesson not found" });
+      return;
+    }
+
     await db.update(lessons)
       .set({ notes, location, amount: amount || null })
       .where(eq(lessons.id, lessonId));
+
+    // Notify student if location changed
+    if (location && location !== existing.location) {
+      const [student] = await db.select().from(students).where(eq(students.id, existing.studentId)).limit(1);
+      const [user] = student ? await db.select().from(users).where(eq(users.id, student.userId)).limit(1) : [];
+      if (user?.email) {
+        try {
+          await sendLocationChangedEmail(user.email, existing.date, existing.startTime, existing.endTime, existing.location || null, location);
+        } catch (mailErr) {
+          console.error("Location change email failed:", mailErr);
+        }
+      }
+    }
 
     const io = req.app.get("io");
     if (io) {

@@ -44,3 +44,43 @@ export async function sendNewMessageEmail(
     `,
   });
 }
+
+export async function sendLocationChangedEmail(
+  to: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  oldLocation: string | null,
+  newLocation: string
+): Promise<void> {
+  if (!transporter) {
+    console.warn("SMTP not configured, skipping email notification");
+    return;
+  }
+
+  const safeOld = (oldLocation || "—").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const safeNew = newLocation.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const safeDate = date.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  await transporter.sendMail({
+    from: `"Skola" <${config.SMTP_USER}>`,
+    to,
+    subject: `Nodarbības vieta mainīta — ${safeDate}`,
+    text: `Nodarbības ${safeDate} ${startTime}–${endTime} vieta ir mainīta uz "${newLocation}"${oldLocation ? ` (iepriekš: "${oldLocation}")` : ""}.\n\n${config.APP_URL}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="margin-bottom: 8px;">Nodarbības vieta mainīta</h2>
+        <p style="color: #666; margin-top: 0;">${safeDate}, ${startTime}–${endTime}</p>
+        <div style="background: #f5f5f5; padding: 12px 16px; border-radius: 8px; margin: 16px 0;">
+          <p style="margin: 0 0 8px 0;">Jaunā vieta: <strong>${safeNew}</strong></p>
+          ${oldLocation ? `<p style="margin: 0; color: #999;">Iepriekš: ${safeOld}</p>` : ""}
+        </div>
+        <a href="${config.APP_URL}/calendar"
+           style="display: inline-block; background: #2563eb; color: #fff; padding: 10px 20px;
+                  border-radius: 6px; text-decoration: none; margin-top: 8px;">
+          Atvērt kalendāru
+        </a>
+      </div>
+    `,
+  });
+}

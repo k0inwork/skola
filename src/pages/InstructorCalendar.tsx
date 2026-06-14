@@ -657,7 +657,7 @@ export function InstructorCalendar() {
     moveHasLessonRef.current = !!slot.lesson;
   }, []);
 
-  const startDragFromDialog = useCallback((slot: Slot) => {
+  const startDragFromDialog = useCallback((slot: Slot, mouseY: number) => {
     setSelectedSlot(null);
     // Wait for dialog to unmount, then enter drag mode
     requestAnimationFrame(() => {
@@ -665,12 +665,8 @@ export function InstructorCalendar() {
       setMovingSlotId(slot.id);
       setMoveDraft(draft);
       moveDraftRef.current = draft;
-      // Use current mouse position so the slot doesn't jump on first mousemove
-      const [sH, sM] = slot.time.split(":").map(Number);
-      const startMin = sH * 60 + sM;
-      const expectedY = GRID_START_HOUR * HOUR_HEIGHT + ((startMin - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
-      const gridTop = gridRef.current?.getBoundingClientRect().top ?? 0;
-      moveStartYRef.current = gridTop + expectedY;
+      // Anchor drag to actual mouse position so the slot stays under the cursor
+      moveStartYRef.current = mouseY;
       moveStartXRef.current = 0;
       moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime, date: slot.date };
       moveHasLessonRef.current = true;
@@ -1437,7 +1433,7 @@ export function InstructorCalendar() {
                 )}
                 <div className="flex gap-2">
                   <button
-                    onClick={() => startDragFromDialog(selectedSlot)}
+                    onClick={(e) => startDragFromDialog(selectedSlot, e.clientY)}
                     className="flex-1 bg-blue-50 text-blue-600 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-100 transition border border-blue-200"
                   >
                     Reschedule
