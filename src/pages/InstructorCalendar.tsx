@@ -516,7 +516,7 @@ export function InstructorCalendar() {
           {slot.time} - {slot.endTime}
         </span>
         {pending && (
-          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full shrink-0 ml-auto">MOVE REQ</span>
+          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full shrink-0 ml-auto">⏳Gaida</span>
         )}
         {slot.lesson && !isMobileDayView && !pending && (
           <GripVertical className="w-3 h-3 text-gray-400 ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -981,7 +981,7 @@ export function InstructorCalendar() {
                               {slot.lesson.location && (
                                 <span className="text-purple-600 truncate block">📍{slot.lesson.location}</span>
                               )}
-                              {pending && <span className="ml-1 text-amber-600 font-bold">MOVE</span>}
+                              {pending && <span className="ml-1 text-amber-600 font-bold">⏳Gaida</span>}
                               {isNewLesson(slot.lesson) && <span className="ml-1 text-blue-600 font-bold">NEW</span>}
                             </div>
                           )}
