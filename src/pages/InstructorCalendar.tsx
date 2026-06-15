@@ -665,8 +665,16 @@ export function InstructorCalendar() {
       setMovingSlotId(slot.id);
       setMoveDraft(draft);
       moveDraftRef.current = draft;
-      // Anchor drag to actual mouse position so the slot stays under the cursor
-      moveStartYRef.current = mouseY;
+      // Anchor so the box's vertical center tracks the cursor (box height = duration in px)
+      const [sH, sM] = slot.time.split(":").map(Number);
+      const [eH, eM] = slot.endTime.split(":").map(Number);
+      const startMin = sH * 60 + sM;
+      const endMin = eH * 60 + eM;
+      const boxHeight = ((endMin - startMin) / 60) * HOUR_HEIGHT;
+      const expectedTopY = GRID_START_HOUR * HOUR_HEIGHT + ((startMin - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
+      const gridTop = gridRef.current?.getBoundingClientRect().top ?? 0;
+      const gridScroll = gridRef.current?.scrollTop ?? 0;
+      moveStartYRef.current = gridTop + expectedTopY - gridScroll + boxHeight / 2;
       moveStartXRef.current = 0;
       moveStartSlotRef.current = { startTime: slot.time, endTime: slot.endTime, date: slot.date };
       moveHasLessonRef.current = true;
