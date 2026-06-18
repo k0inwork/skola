@@ -68,8 +68,8 @@ export const updateLessonSchema = z.object({
 });
 
 export const moveSlotSchema = z.object({
-  startTime: z.string().regex(/^\d{2}:\d{2}$/),
-  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   city: z.string().max(100).optional(),
   location: z.string().max(200).nullable().optional(),
