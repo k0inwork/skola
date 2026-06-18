@@ -43,9 +43,20 @@ export function Layout() {
         .catch(() => {});
     });
 
-    // Listen for calendar updates (bookings/cancellations) for non-students
+    // Listen for calendar updates (bookings/cancellations) for non-students.
+    // Skip the bump when the action originated from this user (their own
+    // edits shouldn't notify themselves).
     if (!isStudent) {
-      socket.on("calendar_update", () => {
+      let selfUserId: string | null = null;
+      if (token) {
+        try {
+          const part = token.split(".")[1];
+          const decoded = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+          selfUserId = decoded?.userId ?? null;
+        } catch { /* malformed token — leave null */ }
+      }
+      socket.on("calendar_update", (payload: any) => {
+        if (payload?.senderId && payload.senderId === selfUserId) return;
         setCalendarAlerts(prev => prev + 1);
       });
     }

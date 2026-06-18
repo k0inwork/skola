@@ -35,6 +35,16 @@ function addDaysToDate(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Broadcast a calendar_update. Includes senderId so each client can skip
+ * the notification badge bump when the action originated from itself
+ * (avoids the instructor's own edits incrementing their own bell).
+ */
+function emitCalendarUpdate(io: any, req: any, payload: Record<string, unknown>) {
+  if (!io) return;
+  io.emit("calendar_update", { ...payload, senderId: req.userId });
+}
+
 
 // --- Slot generation helper ---
 
@@ -230,7 +240,7 @@ router.post("/working-days", validate(workingDaySchema), async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId, date });
+      emitCalendarUpdate(io, req, { instructorId, date });
     }
 
     res.json({ success: true, moved, movedTo });
@@ -483,7 +493,7 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId, date: slot.date });
+      emitCalendarUpdate(io, req, { instructorId, date: slot.date });
     }
 
     res.json(lesson);
@@ -512,7 +522,7 @@ router.post("/mark-lesson-paid", async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId: "all", lessonId });
+      emitCalendarUpdate(io, req, { instructorId: "all", lessonId });
     }
 
     res.json({ success: true });
@@ -557,7 +567,7 @@ router.post("/update-lesson/:lessonId", validate(updateLessonSchema), async (req
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { lessonId });
+      emitCalendarUpdate(io, req, { lessonId });
     }
 
     res.json({ success: true });
@@ -627,7 +637,7 @@ router.post("/cancel-lesson/:lessonId", validate(cancelLessonSchema), async (req
     const io = req.app.get("io");
     if (io && msg) {
       io.emit("new_message", { message: msg, recipientId });
-      io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+      emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: lesson.date });
     }
 
     try {
@@ -733,8 +743,8 @@ router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (r
       const io = req.app.get("io");
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: lesson.instructorId });
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date: newDate });
-        if (oldDate !== newDate) io.emit("calendar_update", { instructorId: lesson.instructorId, date: oldDate });
+        emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: newDate });
+        if (oldDate !== newDate) emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: oldDate });
       }
 
       res.json({ success: true, pending: true });
@@ -772,8 +782,8 @@ router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (r
       const io = req.app.get("io");
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date: oldDate });
-        if (oldDate !== newDate) io.emit("calendar_update", { instructorId: lesson.instructorId, date: newDate });
+        emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: oldDate });
+        if (oldDate !== newDate) emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: newDate });
       }
 
       try {
@@ -879,8 +889,8 @@ router.post("/reschedule-lesson/:lessonId/respond", validate(respondRescheduleSc
       const io = req.app.get("io");
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
-        if (lesson.date !== lesson.proposedDate) io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.proposedDate });
+        emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: lesson.date });
+        if (lesson.date !== lesson.proposedDate) emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: lesson.proposedDate });
       }
 
       try {
@@ -936,7 +946,7 @@ router.post("/reschedule-lesson/:lessonId/respond", validate(respondRescheduleSc
       const io = req.app.get("io");
       if (io) {
         if (msg) io.emit("new_message", { message: msg, recipientId: student?.userId! });
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+        emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: lesson.date });
       }
 
       try {
@@ -1033,9 +1043,9 @@ router.post("/cancel-reschedule/:lessonId", async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       if (msg) io.emit("new_message", { message: msg, recipientId: lesson.instructorId });
-      io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.date });
+      emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: lesson.date });
       if (lesson.proposedDate && lesson.proposedDate !== lesson.date) {
-        io.emit("calendar_update", { instructorId: lesson.instructorId, date: lesson.proposedDate });
+        emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: lesson.proposedDate });
       }
     }
 
@@ -1230,7 +1240,7 @@ router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId });
+      emitCalendarUpdate(io, req, { instructorId });
     }
 
     res.json({ success: true, copied });
@@ -1370,7 +1380,7 @@ router.patch("/slots/:slotId", validate(moveSlotSchema), async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId: slot.instructorId, date: slot.date });
+      emitCalendarUpdate(io, req, { instructorId: slot.instructorId, date: slot.date });
     }
 
     res.json({ success: true });
@@ -1405,7 +1415,7 @@ router.delete("/slots/:slotId", async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("calendar_update", { instructorId: slot.instructorId, date: slot.date });
+      emitCalendarUpdate(io, req, { instructorId: slot.instructorId, date: slot.date });
     }
 
     res.json({ success: true });
