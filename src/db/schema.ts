@@ -86,6 +86,7 @@ export const lessons = pgTable("lessons", {
   endTime: text("end_time").notNull(),
   durationMin: integer("duration_min").notNull().default(60),
   location: text("location"),
+  city: text("city"),
   vehicle: text("vehicle"),
   notes: text("notes"),
   status: text("status").default("scheduled"), // scheduled, rescheduled, reschedule_pending, canceled
@@ -117,6 +118,17 @@ export const instructorWorkingDays = pgTable("instructor_working_days", {
   location: text("location"),
   vehicle: text("vehicle"),
   city: text("city"),
+});
+
+export const instructorWorkingDayCities = pgTable("instructor_working_day_cities", {
+  id: uuid("id")
+    .primaryKey()
+    .defaultRandom(),
+  workingDayId: uuid("working_day_id")
+    .notNull()
+    .references(() => instructorWorkingDays.id, { onDelete: "cascade" }),
+  city: text("city").notNull(),
+  position: integer("position").notNull().default(0),
 });
 
 export const payments = pgTable("payments", {
@@ -218,6 +230,8 @@ export const slots = pgTable("slots", {
   isBooked: boolean("is_booked").default(false),
   lessonId: uuid("lesson_id")
     .references(() => lessons.id),
+  city: text("city"),
+  location: text("location"),
   createdAt: timestamp("created_at")
     .notNull()
     .defaultNow(),

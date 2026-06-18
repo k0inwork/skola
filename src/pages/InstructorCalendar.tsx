@@ -3,6 +3,7 @@ import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
 import { toastSuccess, toastError, toast } from "../lib/notify";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { CityChips } from "../components/CityChips";
 const LocationMapPicker = lazy(() => import("../components/LocationMapPicker"));
 import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X, Trash2 } from "lucide-react";
 import clsx from "clsx";
@@ -18,6 +19,7 @@ interface WorkingDay {
   location: string | null;
   vehicle: string | null;
   city: string | null;
+  cities?: string[];
 }
 
 interface BookedLesson {
@@ -35,6 +37,7 @@ interface BookedLesson {
   amount?: string | null;
   notes?: string | null;
   location?: string | null;
+  city?: string | null;
   createdAt?: string | null;
   status?: string | null;
   proposedDate?: string | null;
@@ -57,6 +60,8 @@ interface Slot {
   endTime: string;
   date: string;
   isAvailable: boolean;
+  city?: string | null;
+  location?: string | null;
   lesson?: BookedLesson;
 }
 
@@ -90,18 +95,27 @@ export function InstructorCalendar() {
   // Locations
   const [locations, setLocations] = useState<Location[]>([]);
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
+  const [placeTargetSlot, setPlaceTargetSlot] = useState<Slot | null>(null);
 
   // Settings Modal State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editingDate, setEditingDate] = useState<Date | null>(null);
-  const [settingsForm, setSettingsForm] = useState({
+  const [settingsForm, setSettingsForm] = useState<{
+    isWorking: boolean;
+    startTime: string;
+    endTime: string;
+    slotDurationMin: number;
+    location: string | null;
+    vehicle: string | null;
+    cities: string[];
+  }>({
     isWorking: true,
     startTime: "09:00",
     endTime: "17:00",
     slotDurationMin: 90,
     location: "" as string | null,
     vehicle: "" as string | null,
-    city: "Olaine" as string,
+    cities: ["Olaine"],
   });
 
   // Reschedule state
@@ -191,6 +205,8 @@ export function InstructorCalendar() {
           endTime: s.endTime,
           date: s.date,
           isAvailable: !s.isBooked,
+          city: s.city ?? null,
+          location: s.location ?? null,
           lesson: s.lesson,
         })));
         // Mark calendar as visited now
@@ -224,10 +240,15 @@ export function InstructorCalendar() {
     const dateStr = format(date, "yyyy-MM-dd");
     const existing = workingDays.find(d => d.date === dateStr);
     setEditingDate(date);
+    const normalizeCities = (wd: WorkingDay | undefined): string[] => {
+      if (wd?.cities && wd.cities.length > 0) return [...wd.cities];
+      if (wd?.city) return [wd.city];
+      return ["Olaine"];
+    };
     if (existing) {
-      setSettingsForm({ isWorking: existing.isWorking, startTime: existing.startTime, endTime: existing.endTime, slotDurationMin: existing.slotDurationMin, location: existing.location, vehicle: existing.vehicle, city: (existing as any).city || "Olaine" });
+      setSettingsForm({ isWorking: existing.isWorking, startTime: existing.startTime, endTime: existing.endTime, slotDurationMin: existing.slotDurationMin, location: existing.location, vehicle: existing.vehicle, cities: normalizeCities(existing) });
     } else {
-      setSettingsForm({ isWorking: true, startTime: "09:00", endTime: "17:00", slotDurationMin: 90, location: null, vehicle: null, city: "Olaine" });
+      setSettingsForm({ isWorking: true, startTime: "09:00", endTime: "17:00", slotDurationMin: 90, location: null, vehicle: null, cities: ["Olaine"] });
     }
     setIsSettingsOpen(true);
   };
@@ -235,6 +256,10 @@ export function InstructorCalendar() {
   const handleSaveSettings = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingDate || !selectedInstructor) return;
+    if (settingsForm.cities.length === 0) {
+      toastError("Izvēlies vismaz vienu pilsētu");
+      return;
+    }
     try {
       const res = await fetch("/api/calendar/working-days", {
         method: "POST",
@@ -242,6 +267,10 @@ export function InstructorCalendar() {
         body: JSON.stringify({ instructorId: selectedInstructor, date: format(editingDate, "yyyy-MM-dd"), ...settingsForm })
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.moved && data.moved > 0) {
+          toastSuccess(`${data.moved} sloti pārvietoti uz "${data.movedTo || settingsForm.cities[0]}"`);
+        }
         setIsSettingsOpen(false);
         await fetchCalendarData();
       } else {
@@ -249,6 +278,53 @@ export function InstructorCalendar() {
         toastError(data.error || "Failed to save settings");
       }
     } catch (err) { console.error(err); toastError("Error saving settings"); }
+  };
+
+  const handleSlotCityChange = async (slot: Slot, city: string) => {
+    try {
+      const res = await fetch(`/api/calendar/slots/${slot.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ city }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toastError(data.error || "Neizdevās nomainīt pilsētu");
+        return;
+      }
+      await fetchCalendarData();
+    } catch (err) { console.error(err); toastError("Kļūda mainot pilsētu"); }
+  };
+
+  const handleSlotPlaceSaved = async (_loc: { id: string; name: string; city: string }) => {
+    const target = placeTargetSlot;
+    if (!target) {
+      // Day-default place flow (settings modal)
+      const res = await fetch("/api/calendar/locations", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const locs = await res.json();
+        setLocations(locs);
+        setSettingsForm(f => ({ ...f, location: _loc.name }));
+      }
+      return;
+    }
+    // Per-slot place flow
+    try {
+      const res = await fetch(`/api/calendar/slots/${target.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ location: _loc.name, city: _loc.city }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toastError(data.error || "Neizdevās saglabāt vietu");
+        return;
+      }
+      setPlaceTargetSlot(null);
+      await fetchCalendarData();
+    } catch (err) { console.error(err); toastError("Kļūda saglabājot vietu"); }
   };
 
   const handleMarkPaid = async (lessonId: string, studentId: string | null) => {
@@ -468,6 +544,13 @@ export function InstructorCalendar() {
     const pending = isPendingReschedule(slot.lesson);
     const isTouchDragging = touchDragSlot?.id === slot.id;
     const isOtherTouchDragging = !!touchDragSlot && touchDragSlot.id !== slot.id;
+    const slotDay = workingDays.find(d => d.date === slot.date);
+    const dayCities = (slotDay?.cities && slotDay.cities.length > 0) ? slotDay.cities : (slotDay?.city ? [slotDay.city] : ["Olaine"]);
+    const openPlaceForSlot = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setPlaceTargetSlot(slot);
+      setIsMapPickerOpen(true);
+    };
     return (
     <div
       key={idx}
@@ -523,6 +606,34 @@ export function InstructorCalendar() {
         )}
       </div>
 
+      {/* Empty slot: city chip + assign place */}
+      {slot.isAvailable && !slot.lesson && (
+        <div className="flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+          <select
+            value={slot.city || dayCities[0]}
+            onChange={(e) => handleSlotCityChange(slot, e.target.value)}
+            className={clsx(
+              "bg-purple-50 text-purple-700 rounded-full px-2 py-0.5 font-medium border border-purple-200 cursor-pointer",
+              isMobileDayView ? "text-xs" : "text-[10px]"
+            )}
+          >
+            {dayCities.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <button
+            type="button"
+            onClick={openPlaceForSlot}
+            title="Pievienot vietu šim slotam"
+            className={clsx(
+              "inline-flex items-center gap-0.5 text-blue-600 hover:bg-blue-50 rounded-full px-2 py-0.5 border border-blue-200 font-medium",
+              isMobileDayView ? "text-xs" : "text-[10px]"
+            )}
+          >
+            <MapPin className={isMobileDayView ? "w-3 h-3" : "w-2.5 h-2.5"} />
+            {slot.location || "+ Vieta"}
+          </button>
+        </div>
+      )}
+
       {/* Proposed target slot for pending reschedule */}
       {pending && slot.lesson?.proposedDate && slot.lesson.proposedDate === slot.date && slot.lesson.proposedStartTime === slot.time && (
         <div className="text-[10px] text-amber-600 font-medium bg-amber-50 rounded p-2 border border-dashed border-amber-200">
@@ -556,11 +667,33 @@ export function InstructorCalendar() {
             {slot.lesson.amount && (
               <span className={clsx("text-gray-500", isMobileDayView ? "text-xs" : "text-[10px]")}>{slot.lesson.amount} EUR</span>
             )}
+            <select
+              value={slot.city || slot.lesson.city || dayCities[0]}
+              onChange={(e) => { e.stopPropagation(); handleSlotCityChange(slot, e.target.value); }}
+              onClick={(e) => e.stopPropagation()}
+              className={clsx(
+                "bg-purple-50 text-purple-700 rounded-full px-1.5 py-0.5 font-medium border border-purple-200 cursor-pointer",
+                isMobileDayView ? "text-xs" : "text-[9px]"
+              )}
+            >
+              {dayCities.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
             {slot.lesson.location && (
               <span className={clsx("inline-flex items-center gap-0.5 bg-purple-100 text-purple-700 rounded-full px-1.5 py-0.5 font-medium", isMobileDayView ? "text-xs" : "text-[9px]")}>
                 <MapPin className={isMobileDayView ? "w-3 h-3" : "w-2.5 h-2.5"} />{slot.lesson.location}
               </span>
             )}
+            <button
+              type="button"
+              onClick={openPlaceForSlot}
+              title="Mainīt vietu"
+              className={clsx(
+                "inline-flex items-center gap-0.5 text-blue-600 hover:bg-blue-50 rounded-full px-1.5 py-0.5 border border-blue-200 font-medium",
+                isMobileDayView ? "text-xs" : "text-[9px]"
+              )}
+            >
+              <MapPin className={isMobileDayView ? "w-3 h-3" : "w-2.5 h-2.5"} />{slot.lesson.location ? "Mainīt" : "+ Vieta"}
+            </button>
           </div>
 
           {pending && (
@@ -893,8 +1026,11 @@ export function InstructorCalendar() {
                     <div className={clsx("text-xs font-medium", isToday ? "text-blue-600" : "text-gray-600")}>{format(d, "EEE")}</div>
                     <div className={clsx("text-lg font-light", isToday && "font-semibold text-blue-600")}>{format(d, "d")}</div>
                     <div className="flex gap-1 mt-0.5 flex-wrap justify-center min-h-[18px]">
-                      {wDay?.city && (
-                        <span className="text-[10px] leading-tight bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{wDay.city}</span>
+                      {(wDay?.cities ?? (wDay?.city ? [wDay.city] : [])).slice(0, 2).map((c, idx) => (
+                        <span key={c} className={`text-[10px] leading-tight px-1.5 py-0.5 rounded ${idx === 0 ? "bg-purple-600 text-white" : "bg-purple-100 text-purple-700"}`}>{c}</span>
+                      ))}
+                      {(wDay?.cities ?? (wDay?.city ? [wDay.city] : [])).length > 2 && (
+                        <span className="text-[10px] leading-tight bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">+{(wDay!.cities!.length) - 2}</span>
                       )}
                       {wDay?.vehicle && (
                         <span className="text-[10px] leading-tight bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded capitalize">{wDay.vehicle}</span>
@@ -1067,9 +1203,9 @@ export function InstructorCalendar() {
             ) : (
               <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full font-medium">Off</span>
             )}
-            {wDay?.city && (
-              <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full font-medium ml-1">{wDay.city}</span>
-            )}
+            {(wDay?.cities ?? (wDay?.city ? [wDay.city] : [])).map((c, idx) => (
+              <span key={c} className={`px-2 py-0.5 rounded-full font-medium ml-1 ${idx === 0 ? "bg-purple-600 text-white" : "text-purple-600 bg-purple-50"}`}>{c}</span>
+            ))}
             {wDay?.vehicle && (
               <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium ml-1 capitalize">{wDay.vehicle}</span>
             )}
@@ -1180,7 +1316,9 @@ export function InstructorCalendar() {
                   <label className="block text-xs font-medium text-gray-500 mb-1">Vieta</label>
                   {(() => {
                     const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
-                    const cityLocations = locations.filter((loc: any) => loc.city === wd?.city);
+                    const dayCities = wd?.cities && wd.cities.length > 0 ? wd.cities : (wd?.city ? [wd.city] : []);
+                    const slotCity = selectedSlot.city || selectedSlot.lesson?.city || dayCities[0];
+                    const cityLocations = locations.filter((loc: any) => loc.city === slotCity);
                     return cityLocations.length > 0 ? (
                       <select
                         value={selectedSlot.lesson?.location || ""}
@@ -1197,7 +1335,7 @@ export function InstructorCalendar() {
                         {wd?.vehicle && (
                           <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded capitalize">{wd.vehicle}</span>
                         )}
-                        <span className="text-xs text-gray-400">{wd?.city || "No city"}</span>
+                        <span className="text-xs text-gray-400">{slotCity || "No city"}</span>
                       </div>
                     );
                   })()}
@@ -1345,7 +1483,9 @@ export function InstructorCalendar() {
                     <label className="block text-xs font-medium text-gray-500 mb-1">Vieta</label>
                     {(() => {
                       const wd = workingDays.find((w: WorkingDay) => w.date === selectedSlot.date);
-                      const cityLocations = locations.filter((loc: any) => loc.city === wd?.city);
+                      const dayCities = wd?.cities && wd.cities.length > 0 ? wd.cities : (wd?.city ? [wd.city] : []);
+                      const slotCity = selectedSlot.city || selectedSlot.lesson?.city || dayCities[0];
+                      const cityLocations = locations.filter((loc: any) => loc.city === slotCity);
                       return cityLocations.length > 0 ? (
                         <select
                           value={selectedSlot.lesson?.location || ""}
@@ -1590,16 +1730,12 @@ export function InstructorCalendar() {
                   </div>
                   <p className="text-xs text-gray-400 mt-1">Lesson duration: 90 min (fixed)</p>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Pilsēta</label>
-                    <select
-                      value={settingsForm.city}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, city: e.target.value, location: null })}
-                      className="w-full px-3 py-2.5 border rounded-lg text-sm min-h-[44px]"
-                    >
-                      <option value="Olaine">Olaine</option>
-                      <option value="Rīga">Rīga</option>
-                      <option value="Jelgava">Jelgava</option>
-                    </select>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Pilsētas</label>
+                    <CityChips
+                      cities={settingsForm.cities}
+                      token={token}
+                      onChange={(cities) => setSettingsForm(f => ({ ...f, cities, location: null }))}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Vieta</label>
@@ -1611,7 +1747,7 @@ export function InstructorCalendar() {
                       >
                         <option value="">— nav —</option>
                         {locations
-                          .filter((loc: any) => loc.city === settingsForm.city)
+                          .filter((loc: any) => settingsForm.cities.includes(loc.city))
                           .map((loc: { id: string; name: string }) => (
                             <option key={loc.id} value={loc.name}>{loc.name}</option>
                           ))}
@@ -1650,19 +1786,10 @@ export function InstructorCalendar() {
       {isMapPickerOpen && (
         <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white rounded-lg p-6">Ielādē karti...</div></div>}>
           <LocationMapPicker
-            defaultCity={settingsForm.city}
+            defaultCity={placeTargetSlot?.city || settingsForm.cities[0]}
             token={token}
-            onClose={() => setIsMapPickerOpen(false)}
-            onSaved={async (loc) => {
-              const res = await fetch("/api/calendar/locations", {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              if (res.ok) {
-                const locs = await res.json();
-                setLocations(locs);
-                setSettingsForm(f => ({ ...f, location: loc.name }));
-              }
-            }}
+            onClose={() => { setIsMapPickerOpen(false); setPlaceTargetSlot(null); }}
+            onSaved={handleSlotPlaceSaved}
           />
         </Suspense>
       )}

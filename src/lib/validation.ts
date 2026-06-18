@@ -63,6 +63,7 @@ export const cancelLessonSchema = z.object({
 export const updateLessonSchema = z.object({
   notes: z.string().max(2000).optional(),
   location: z.string().max(200).optional(),
+  city: z.string().max(100).optional(),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional().or(z.literal("")),
 });
 
@@ -70,6 +71,8 @@ export const moveSlotSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  city: z.string().max(100).optional(),
+  location: z.string().max(200).nullable().optional(),
 });
 
 export const workingDaySchema = z.object({
@@ -82,6 +85,7 @@ export const workingDaySchema = z.object({
   location: z.string().max(200).optional().nullable(),
   vehicle: z.string().max(100).optional().nullable(),
   city: z.string().max(100).optional().nullable(),
+  cities: z.array(z.string().max(100)).max(10).optional(),
 });
 
 export const copyWeekSchema = z.object({

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import type { TouchEvent as ReactTouchEvent } from "react";
 import { format, addDays, startOfWeek, isSameDay, subDays } from "date-fns";
 import { useAuthStore } from "../lib/store";
 import { toastError, toastSuccess } from "../lib/notify";
@@ -30,6 +31,8 @@ interface Slot {
   date: string;
   isAvailable: boolean;
   isMine: boolean;
+  city?: string | null;
+  location?: string | null;
   lesson?: BookedLesson;
 }
 
@@ -65,8 +68,8 @@ export function StudentCalendar() {
 
   // Touch swipe for mobile day navigation
   const [touchStart, setTouchStart] = useState<number | null>(null);
-  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchStart = (e: ReactTouchEvent) => setTouchStart(e.touches[0].clientX);
+  const handleTouchEnd = (e: ReactTouchEvent) => {
     if (touchStart === null) return;
     const diff = e.changedTouches[0].clientX - touchStart;
     if (Math.abs(diff) > 60) {
@@ -126,6 +129,8 @@ export function StudentCalendar() {
           date: s.date,
           isAvailable: !s.isBooked,
           isMine: !!s.lesson?.isMine,
+          city: s.city ?? null,
+          location: s.location ?? null,
           lesson: s.lesson,
         })));
       }
@@ -303,9 +308,9 @@ export function StudentCalendar() {
                 <div className="text-sm mt-1">
                   {rescheduleMode && slot.isAvailable ? "Pārcelt šeit" : slot.isAvailable ? "Rezervēt" : isOriginalPending && !rescheduleMode ? "Pārcelšana" : isTargetPending && !rescheduleMode ? "Gaida apstiprinājumu" : slot.isMine && !rescheduleMode ? "Mana nodarbība" : "Aizņemts"}
                 </div>
-                {(slot.lesson?.location || workingDays[slot.date]?.location) && (
+                {(slot.location || slot.lesson?.location || workingDays[slot.date]?.location) && (
                   <span className="inline-flex items-center gap-0.5 bg-purple-100 text-purple-700 rounded-full px-2 py-0.5 text-xs font-medium mt-1">
-                    📍{slot.lesson?.location || workingDays[slot.date]?.location}
+                    📍{slot.location || slot.lesson?.location || workingDays[slot.date]?.location}
                   </span>
                 )}
                 {isOriginalPending && slot.lesson?.proposedDate && (
@@ -408,9 +413,9 @@ export function StudentCalendar() {
                         <div className="px-1.5 pb-0.5">
                           {rescheduleMode && slot.isAvailable ? "Pārcelt" : slot.isAvailable ? "Rezervēt" : isOriginalPending && !rescheduleMode ? "Pārcelšana" : isTargetPending && !rescheduleMode ? "Gaida" : slot.isMine && !rescheduleMode ? "Manējā" : "Aizņemts"}
                         </div>
-                        {(slot.lesson?.location || workingDays[slot.date]?.location) && (
+                        {(slot.location || slot.lesson?.location || workingDays[slot.date]?.location) && (
                           <div className="px-1.5 pb-0.5 text-[9px] text-purple-700 font-medium truncate">
-                            📍{slot.lesson?.location || workingDays[slot.date]?.location}
+                            📍{slot.location || slot.lesson?.location || workingDays[slot.date]?.location}
                           </div>
                         )}
                         {isOriginalPending && slot.lesson?.proposedDate && (

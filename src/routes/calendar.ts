@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, gte, lte, inArray, desc, isNull, ne } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { instructorWorkingDays, lessons, users, students, enrollments, slots } from "../db/schema.js";
+import { instructorWorkingDays, lessons, users, students, enrollments, slots, instructorWorkingDayCities } from "../db/schema.js";
 import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate, bookSlotSchema, rescheduleSchema, respondRescheduleSchema, cancelLessonSchema, updateLessonSchema, moveSlotSchema, workingDaySchema, copyWeekSchema, createLocationSchema } from "../lib/validation.js";
@@ -57,40 +57,63 @@ async function generateSlotsForDay(instructorId: string, date: string) {
     return;
   }
 
+  // Resolve the day's ordered cities (child table first, fall back to scalar cache)
+  const cityRows = await db.select().from(instructorWorkingDayCities)
+    .where(eq(instructorWorkingDayCities.workingDayId, workingDay.id))
+    .orderBy(instructorWorkingDayCities.position);
+  const dayCities = cityRows.length > 0
+    ? cityRows.map(r => r.city)
+    : (workingDay.city ? [workingDay.city] : []);
+  const defaultCity = dayCities[0] || null;
+
   const slotDuration = workingDay.slotDurationMin || 90;
   const [startH, startM] = workingDay.startTime.split(":").map(Number);
   const [endH, endM] = workingDay.endTime.split(":").map(Number);
   const workStartMin = startH * 60 + startM;
   const workEndMin = endH * 60 + endM;
 
-  // Delete existing unbooked slots for this day
-  await db.delete(slots).where(and(
+  // Load existing unbooked slots for this day keyed by startTime (preserve city/location)
+  const existingUnbooked = await db.select().from(slots).where(and(
     eq(slots.instructorId, instructorId),
     eq(slots.date, date),
     isNull(slots.lessonId),
     eq(slots.isBooked, false)
   ));
+  const existingByStart = new Map(existingUnbooked.map(s => [s.startTime, s]));
 
-  // Generate new slots
-  const values = [];
+  // Build the set of generated start times
+  const generatedStarts = new Set<string>();
   for (let mins = workStartMin; mins + slotDuration <= workEndMin; mins += slotDuration) {
     const sH = String(Math.floor(mins / 60)).padStart(2, "0");
     const sM = String(mins % 60).padStart(2, "0");
     const eMin = mins + slotDuration;
     const eH = String(Math.floor(eMin / 60)).padStart(2, "0");
     const eM = String(eMin % 60).padStart(2, "0");
+    const startTime = `${sH}:${sM}`;
+    const endTime = `${eH}:${eM}`;
+    generatedStarts.add(startTime);
 
-    values.push({
+    const existing = existingByStart.get(startTime);
+    if (existing) {
+      // Keep the existing row as-is — instructor's per-slot city/location overrides survive
+      continue;
+    }
+
+    await db.insert(slots).values({
       instructorId,
       date,
-      startTime: `${sH}:${sM}`,
-      endTime: `${eH}:${eM}`,
+      startTime,
+      endTime,
       isBooked: false,
+      city: defaultCity,
+      location: null,
     });
   }
 
-  if (values.length > 0) {
-    await db.insert(slots).values(values);
+  // Delete unbooked slots whose startTime is no longer in the generated set
+  const orphans = existingUnbooked.filter(s => !generatedStarts.has(s.startTime));
+  for (const orphan of orphans) {
+    await db.delete(slots).where(eq(slots.id, orphan.id));
   }
 }
 
@@ -123,8 +146,16 @@ router.get("/working-days", async (req, res) => {
 // Upsert working day — regenerates slots for that day
 router.post("/working-days", validate(workingDaySchema), async (req, res) => {
   try {
-    const { instructorId, date, isWorking, startTime, endTime, location, vehicle, city } = req.body;
+    const { instructorId, date, isWorking, startTime, endTime, location, vehicle } = req.body;
+    // cities[] is the new multi-city list. Legacy scalar `city` (if the client still
+    // sends one) is merged in only when cities is absent.
+    const rawCities: string[] | undefined = req.body.cities;
+    const legacyCity: string | undefined = req.body.city;
+    const cities = Array.isArray(rawCities) && rawCities.length > 0
+      ? rawCities.filter((c): c is string => typeof c === "string" && c.trim().length > 0)
+      : (legacyCity ? [legacyCity] : []);
     const slotDurationMin = req.body.slotDurationMin || 90;
+    const primaryCity = cities[0] || null;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });
@@ -136,19 +167,65 @@ router.post("/working-days", validate(workingDaySchema), async (req, res) => {
       eq(instructorWorkingDays.date, date)
     ));
 
-    const dayData = { isWorking, startTime, endTime, slotDurationMin, location: location || null, vehicle: vehicle || null, city: city || null };
+    const dayData = { isWorking, startTime, endTime, slotDurationMin, location: location || null, vehicle: vehicle || null, city: primaryCity };
 
+    let workingDayId: string;
     if (existing.length > 0) {
       await db.update(instructorWorkingDays)
         .set(dayData)
         .where(eq(instructorWorkingDays.id, existing[0].id));
+      workingDayId = existing[0].id;
     } else {
-      await db.insert(instructorWorkingDays).values({
+      const [inserted] = await db.insert(instructorWorkingDays).values({
         instructorId, date, ...dayData
-      });
+      }).returning();
+      workingDayId = inserted.id;
     }
 
-    // Regenerate slots for this day
+    // Sync the child cities table: load old list, compute diff, replace rows, auto-reassign.
+    const oldCityRows = await db.select().from(instructorWorkingDayCities)
+      .where(eq(instructorWorkingDayCities.workingDayId, workingDayId))
+      .orderBy(instructorWorkingDayCities.position);
+    const oldCities = oldCityRows.map(r => r.city);
+    const newCitySet = new Set(cities);
+    const removed = oldCities.filter(c => !newCitySet.has(c));
+
+    let moved = 0;
+    const movedTo = primaryCity;
+    if (removed.length > 0 && primaryCity) {
+      // Reassign all slots (empty + booked) using a removed city to the new primary
+      const movedSlots = await db.update(slots)
+        .set({ city: primaryCity })
+        .where(and(
+          eq(slots.instructorId, instructorId),
+          eq(slots.date, date),
+          inArray(slots.city, removed)
+        ))
+        .returning({ id: slots.id });
+      moved += movedSlots.length;
+
+      // Reassign booked lessons' city too (keep their location — decision #4)
+      const movedLessons = await db.update(lessons)
+        .set({ city: primaryCity })
+        .where(and(
+          eq(lessons.instructorId, instructorId),
+          eq(lessons.date, date),
+          inArray(lessons.city, removed)
+        ))
+        .returning({ id: lessons.id });
+      moved += movedLessons.length;
+    }
+
+    // Replace child-table rows with the new ordered list
+    await db.delete(instructorWorkingDayCities)
+      .where(eq(instructorWorkingDayCities.workingDayId, workingDayId));
+    if (cities.length > 0) {
+      await db.insert(instructorWorkingDayCities).values(
+        cities.map((city, position) => ({ workingDayId, city, position }))
+      );
+    }
+
+    // Regenerate slots for this day (preserves per-slot city via upsert)
     await generateSlotsForDay(instructorId, date);
 
     const io = req.app.get("io");
@@ -156,7 +233,7 @@ router.post("/working-days", validate(workingDaySchema), async (req, res) => {
       io.emit("calendar_update", { instructorId, date });
     }
 
-    res.json({ success: true });
+    res.json({ success: true, moved, movedTo });
   } catch (err) {
     console.error("Upsert working days error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -177,6 +254,29 @@ router.get("/slots", async (req, res) => {
         lte(instructorWorkingDays.date, endDate)
       ));
 
+    // Fetch ordered cities per working day in range (one query, grouped in JS)
+    const dayIds = workingDays.map(wd => wd.id);
+    const cityRows = dayIds.length > 0
+      ? await db.select({
+          workingDayId: instructorWorkingDayCities.workingDayId,
+          city: instructorWorkingDayCities.city,
+          position: instructorWorkingDayCities.position,
+        })
+          .from(instructorWorkingDayCities)
+          .where(inArray(instructorWorkingDayCities.workingDayId, dayIds))
+          .orderBy(instructorWorkingDayCities.workingDayId, instructorWorkingDayCities.position)
+      : [];
+    const citiesByDayId = new Map<string, string[]>();
+    for (const r of cityRows) {
+      const arr = citiesByDayId.get(r.workingDayId) ?? [];
+      arr.push(r.city);
+      citiesByDayId.set(r.workingDayId, arr);
+    }
+    const workingDaysWithCities = workingDays.map(wd => ({
+      ...wd,
+      cities: citiesByDayId.get(wd.id) ?? (wd.city ? [wd.city] : []),
+    }));
+
     // Get slots with optional lesson info
     const slotRows = await db.select({
       id: slots.id,
@@ -185,6 +285,8 @@ router.get("/slots", async (req, res) => {
       endTime: slots.endTime,
       isBooked: slots.isBooked,
       lessonId: slots.lessonId,
+      slotCity: slots.city,
+      slotLocation: slots.location,
       // lesson fields (via join)
       lessonStudentId: lessons.studentId,
       lessonStatus: lessons.status,
@@ -192,6 +294,7 @@ router.get("/slots", async (req, res) => {
       lessonAmount: lessons.amount,
       lessonNotes: lessons.notes,
       lessonLocation: lessons.location,
+      lessonCity: lessons.city,
       lessonProposedDate: lessons.proposedDate,
       lessonProposedStartTime: lessons.proposedStartTime,
       lessonProposedEndTime: lessons.proposedEndTime,
@@ -227,6 +330,8 @@ router.get("/slots", async (req, res) => {
         startTime: s.startTime,
         endTime: s.endTime,
         isBooked: s.isBooked,
+        city: s.slotCity,
+        location: s.slotLocation,
         lesson: s.lessonId ? {
           id: s.lessonId,
           status: s.lessonStatus,
@@ -234,6 +339,7 @@ router.get("/slots", async (req, res) => {
           amount: s.lessonAmount,
           notes: hideDetails ? null : s.lessonNotes,
           location: hideDetails ? null : s.lessonLocation,
+          city: hideDetails ? null : s.lessonCity,
           proposedDate: s.lessonProposedDate,
           proposedStartTime: s.lessonProposedStartTime,
           proposedEndTime: s.lessonProposedEndTime,
@@ -248,7 +354,7 @@ router.get("/slots", async (req, res) => {
       };
     });
 
-    res.json({ workingDays, slots: result });
+    res.json({ workingDays: workingDaysWithCities, slots: result });
   } catch (err) {
     console.error("Get slots error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -365,7 +471,8 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
       endTime: slot.endTime,
       durationMin: durationMin || 90,
       status: "scheduled",
-      location: workingDay?.location || null,
+      location: slot.location || workingDay?.location || null,
+      city: slot.city || workingDay?.city || null,
       vehicle: workingDay?.vehicle || null,
     }).returning();
 
@@ -418,7 +525,7 @@ router.post("/mark-lesson-paid", async (req, res) => {
 router.post("/update-lesson/:lessonId", validate(updateLessonSchema), async (req, res) => {
   try {
     const { lessonId } = req.params;
-    const { notes, location, amount } = req.body;
+    const { notes, location, city, amount } = req.body;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
       res.status(403).json({ error: "Forbidden" });
@@ -432,7 +539,7 @@ router.post("/update-lesson/:lessonId", validate(updateLessonSchema), async (req
     }
 
     await db.update(lessons)
-      .set({ notes, location, amount: amount || null })
+      .set({ notes, location, city, amount: amount || null })
       .where(eq(lessons.id, lessonId));
 
     // Notify student if location changed
@@ -1042,16 +1149,36 @@ router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
         eq(instructorWorkingDays.instructorId, instructorId),
         eq(instructorWorkingDays.date, newDate)
       ));
+
+      // Fetch this source day's ordered cities (child table) to carry them forward
+      const srcCities = await db.select().from(instructorWorkingDayCities)
+        .where(eq(instructorWorkingDayCities.workingDayId, day.id))
+        .orderBy(instructorWorkingDayCities.position);
+      const citiesToCopy = srcCities.map(c => c.city);
+      const primaryCity = citiesToCopy[0] ?? day.city ?? null;
+
+      let targetDayId: string;
       if (existing.length > 0) {
         await db.update(instructorWorkingDays)
-          .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90, location: day.location, vehicle: day.vehicle })
+          .set({ isWorking: day.isWorking, startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90, location: day.location, vehicle: day.vehicle, city: primaryCity })
           .where(eq(instructorWorkingDays.id, existing[0].id));
+        targetDayId = existing[0].id;
       } else {
-        await db.insert(instructorWorkingDays).values({
+        const [inserted] = await db.insert(instructorWorkingDays).values({
           instructorId, date: newDate, isWorking: day.isWorking,
           startTime: day.startTime, endTime: day.endTime, slotDurationMin: day.slotDurationMin || 90,
-          location: day.location, vehicle: day.vehicle,
-        });
+          location: day.location, vehicle: day.vehicle, city: primaryCity,
+        }).returning();
+        targetDayId = inserted.id;
+      }
+
+      // Mirror the source day's ordered cities onto the target day
+      await db.delete(instructorWorkingDayCities)
+        .where(eq(instructorWorkingDayCities.workingDayId, targetDayId));
+      if (citiesToCopy.length > 0) {
+        await db.insert(instructorWorkingDayCities).values(
+          citiesToCopy.map((city, position) => ({ workingDayId: targetDayId, city, position }))
+        );
       }
     }
 
@@ -1095,6 +1222,8 @@ router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
         startTime: slot.startTime,
         endTime: slot.endTime,
         isBooked: false,
+        city: slot.city,
+        location: slot.location,
       });
       copied++;
     }
@@ -1111,15 +1240,19 @@ router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
   }
 });
 
-// Move a slot (update start/end time, optionally date)
+// Move a slot (update start/end time, optionally date; optionally update city/location)
 router.patch("/slots/:slotId", validate(moveSlotSchema), async (req, res) => {
   try {
     const { slotId } = req.params;
-    const { startTime, endTime, date } = req.body;
+    const { startTime, endTime, date, city, location } = req.body;
+    const isCityOrLocUpdate = city !== undefined || location !== undefined;
 
     if (!startTime || !endTime) {
-      res.status(400).json({ error: "startTime and endTime required" });
-      return;
+      // Allow city/location-only updates without a time change
+      if (!isCityOrLocUpdate) {
+        res.status(400).json({ error: "startTime and endTime required" });
+        return;
+      }
     }
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
@@ -1133,77 +1266,104 @@ router.patch("/slots/:slotId", validate(moveSlotSchema), async (req, res) => {
       return;
     }
 
+    // Note: per product decision #4, we do NOT validate that the city is in the
+    // day's city list — instructors can drop a pin anywhere and we accept it.
+    // The frontend chip selector already limits manual city edits to day cities.
+
     const targetDate = date || slot.date;
+    const effectiveStart = startTime || slot.startTime;
+    const effectiveEnd = endTime || slot.endTime;
 
-    // Check for overlap with other slots on the target day
-    const [newSH, newSM] = startTime.split(":").map(Number);
-    const [newEH, newEM] = endTime.split(":").map(Number);
-    const newStartMin = newSH * 60 + newSM;
-    const newEndMin = newEH * 60 + newEM;
+    // Overlap check only matters when changing time/date
+    if (startTime && endTime) {
+      const [newSH, newSM] = effectiveStart.split(":").map(Number);
+      const [newEH, newEM] = effectiveEnd.split(":").map(Number);
+      const newStartMin = newSH * 60 + newSM;
+      const newEndMin = newEH * 60 + newEM;
 
-    // Check overlap: booked slots only check other booked slots (free ones are auto-generated),
-    // free slots check against ALL slots to prevent stacking
-    const overlapConditions = [
-      eq(slots.instructorId, slot.instructorId),
-      eq(slots.date, targetDate),
-      ne(slots.id, slotId),
-    ];
-    if (slot.isBooked) {
-      overlapConditions.push(eq(slots.isBooked, true));
-    }
-    const daySlots = await db.select().from(slots).where(and(...overlapConditions));
+      const overlapConditions = [
+        eq(slots.instructorId, slot.instructorId),
+        eq(slots.date, targetDate),
+        ne(slots.id, slotId),
+      ];
+      if (slot.isBooked) {
+        overlapConditions.push(eq(slots.isBooked, true));
+      }
+      const daySlots = await db.select().from(slots).where(and(...overlapConditions));
 
-    for (const s of daySlots) {
-      const [sH, sM] = s.startTime.split(":").map(Number);
-      const [eH, eM] = s.endTime.split(":").map(Number);
-      const sStart = sH * 60 + sM;
-      const sEnd = eH * 60 + eM;
-      if (newStartMin < sEnd && newEndMin > sStart) {
-        res.status(409).json({ error: "Slot overlaps with another slot" });
-        return;
+      for (const s of daySlots) {
+        const [sH, sM] = s.startTime.split(":").map(Number);
+        const [eH, eM] = s.endTime.split(":").map(Number);
+        const sStart = sH * 60 + sM;
+        const sEnd = eH * 60 + eM;
+        if (newStartMin < sEnd && newEndMin > sStart) {
+          res.status(409).json({ error: "Slot overlaps with another slot" });
+          return;
+        }
       }
     }
 
-    await db.update(slots).set({ startTime, endTime, date: targetDate, updatedAt: new Date() }).where(eq(slots.id, slotId));
+    const slotUpdate: { startTime?: string; endTime?: string; date: string; city?: string | null; location?: string | null; updatedAt: Date } = {
+      date: targetDate,
+      updatedAt: new Date(),
+    };
+    if (startTime) slotUpdate.startTime = effectiveStart;
+    if (endTime) slotUpdate.endTime = effectiveEnd;
+    if (city !== undefined) slotUpdate.city = city;
+    if (location !== undefined) slotUpdate.location = location;
+    await db.update(slots).set(slotUpdate).where(eq(slots.id, slotId));
 
-    // If booked, also update the lesson and notify student
+    // If booked, sync city/location to the lesson (and reuse the existing reschedule path for time changes)
     if (slot.isBooked && slot.lessonId) {
-      const [lesson] = await db.select().from(lessons).where(eq(lessons.id, slot.lessonId)).limit(1);
-      await db.update(lessons)
-        .set({ startTime, endTime, date: targetDate, status: "rescheduled" })
-        .where(eq(lessons.id, slot.lessonId));
+      const lessonUpdate: { startTime?: string; endTime?: string; date?: string; status?: string; city?: string | null; location?: string | null } = {};
+      if (city !== undefined) lessonUpdate.city = city;
+      if (location !== undefined) lessonUpdate.location = location;
 
-      // Notify student via message
-      if (lesson?.studentId) {
-        const { messages: msgs } = await import("../db/schema.js");
-        const [student] = await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1);
-        const oldTime = `${lesson.date} (${lesson.startTime}-${lesson.endTime})`;
-        const newTime = `${targetDate} (${startTime}-${endTime})`;
-        const content = `Lesson rescheduled by Instructor: ${oldTime} → ${newTime}`;
+      if (startTime && endTime) {
+        lessonUpdate.startTime = effectiveStart;
+        lessonUpdate.endTime = effectiveEnd;
+        lessonUpdate.date = targetDate;
+        lessonUpdate.status = "rescheduled";
+      }
 
-        const [msg] = await db.insert(msgs).values({
-          senderId: req.userId!,
-          recipientId: student?.userId!,
-          content,
-          type: "reschedule_approved",
-          lessonId: lesson.id,
-        }).returning();
+      if (Object.keys(lessonUpdate).length > 0) {
+        const [lesson] = await db.select().from(lessons).where(eq(lessons.id, slot.lessonId)).limit(1);
+        await db.update(lessons)
+          .set(lessonUpdate)
+          .where(eq(lessons.id, slot.lessonId));
 
-        const io = req.app.get("io");
-        if (io && msg) {
-          io.emit("new_message", { message: msg, recipientId: student?.userId! });
-        }
+        // Existing notification path: only fires on time/date change
+        if (startTime && endTime && lesson?.studentId) {
+          const { messages: msgs } = await import("../db/schema.js");
+          const [student] = await db.select().from(students).where(eq(students.id, lesson.studentId)).limit(1);
+          const oldTime = `${lesson.date} (${lesson.startTime}-${lesson.endTime})`;
+          const newTime = `${targetDate} (${effectiveStart}-${effectiveEnd})`;
+          const content = `Lesson rescheduled by Instructor: ${oldTime} → ${newTime}`;
 
-        // Send email notification
-        try {
-          if (student?.userId) {
-            const [studentUser] = await db.select().from(users).where(eq(users.id, student.userId)).limit(1);
-            if (studentUser?.email) {
-              await sendNewMessageEmail(studentUser.email, "Instructors", content);
-            }
+          const [msg] = await db.insert(msgs).values({
+            senderId: req.userId!,
+            recipientId: student?.userId!,
+            content,
+            type: "reschedule_approved",
+            lessonId: lesson.id,
+          }).returning();
+
+          const msgIo = req.app.get("io");
+          if (msgIo && msg) {
+            msgIo.emit("new_message", { message: msg, recipientId: student?.userId! });
           }
-        } catch (mailErr) {
-          console.error("Email notification error:", mailErr);
+
+          // Send email notification
+          try {
+            if (student?.userId) {
+              const [studentUser] = await db.select().from(users).where(eq(users.id, student.userId)).limit(1);
+              if (studentUser?.email) {
+                await sendNewMessageEmail(studentUser.email, "Instructors", content);
+              }
+            }
+          } catch (mailErr) {
+            console.error("Email notification error:", mailErr);
+          }
         }
       }
     }
