@@ -1113,6 +1113,9 @@ export function InstructorCalendar() {
                                 {slot.lesson.studentFirstName} {slot.lesson.studentLastName}
                               </span>
                               <span className="text-gray-500">{sTime}–{eTime}</span>
+                              {(slot.city || slot.lesson.city) && (
+                                <span className="text-purple-700 bg-purple-100 rounded px-1 truncate inline-block max-w-full">{slot.city || slot.lesson.city}</span>
+                              )}
                               {slot.lesson.location && (
                                 <span className="text-purple-600 truncate block">📍{slot.lesson.location}</span>
                               )}
@@ -1120,11 +1123,25 @@ export function InstructorCalendar() {
                               {isNewLesson(slot.lesson) && <span className="ml-1 text-blue-600 font-bold">NEW</span>}
                             </div>
                           )}
-                          {slot.isAvailable && !slot.lesson && (
-                            <div className="px-1.5 py-0.5 text-[9px] text-emerald-500 font-medium">
-                              {sTime}–{eTime}
-                            </div>
-                          )}
+                          {slot.isAvailable && !slot.lesson && (() => {
+                            const wd = workingDays.find(w => w.date === slot.date);
+                            const dayCities = wd?.cities && wd.cities.length > 0 ? wd.cities : (wd?.city ? [wd.city] : []);
+                            return (
+                              <div className="px-1.5 py-0.5 text-[9px]">
+                                <div className="text-emerald-500 font-medium">{sTime}–{eTime}</div>
+                                {dayCities.length > 0 && (
+                                  <select
+                                    value={slot.city || dayCities[0]}
+                                    onChange={(e) => { e.stopPropagation(); handleSlotCityChange(slot, e.target.value); }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="mt-0.5 bg-purple-50 text-purple-700 rounded px-1 py-0.5 font-medium border border-purple-200 cursor-pointer max-w-full"
+                                  >
+                                    {dayCities.map(c => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
