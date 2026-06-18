@@ -1133,10 +1133,12 @@ export function InstructorCalendar() {
                                   <select
                                     value={slot.city || dayCities[0]}
                                     onChange={(e) => { e.stopPropagation(); handleSlotCityChange(slot, e.target.value); }}
+                                    onMouseDown={(e) => e.stopPropagation()}
                                     onClick={(e) => e.stopPropagation()}
+                                    onDoubleClick={(e) => e.stopPropagation()}
                                     className="mt-0.5 bg-purple-50 text-purple-700 rounded px-1 py-0.5 font-medium border border-purple-200 cursor-pointer max-w-full"
                                   >
-                                    {dayCities.map(c => <option key={c} value={c}>{c}</option>)}
+                                    {dayCities.map((c: string) => <option key={c} value={c}>{c}</option>)}
                                   </select>
                                 )}
                               </div>
