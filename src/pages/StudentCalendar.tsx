@@ -57,6 +57,12 @@ export function StudentCalendar() {
   const [rescheduleMode, setRescheduleMode] = useState(false);
   const [rescheduleFromSlot, setRescheduleFromSlot] = useState<Slot | null>(null);
   const [isMobileDayView, setIsMobileDayView] = useState(false);
+  const [studentPhone, setStudentPhone] = useState<string | null>(null);
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [pendingBooking, setPendingBooking] = useState<Slot | null>(null);
 
   // Detect mobile on mount and resize
   useEffect(() => {
@@ -86,6 +92,17 @@ export function StudentCalendar() {
         if (!data || !Array.isArray(data)) return;
         const insts = data.filter((u: any) => u.role === "instructor" || u.role === "admin");
         if (insts.length > 0) setSelectedInstructor(insts[0].id);
+      })
+      .catch(console.error);
+
+    // Fetch own student profile to know phone status before booking
+    fetch("/api/students/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setStudentId(data.id);
+          setStudentPhone(data.phone || null);
+        }
       })
       .catch(console.error);
   }, [token]);
@@ -181,21 +198,76 @@ export function StudentCalendar() {
       return;
     }
 
+    // Gate booking on phone — prompt before hitting the API
+    if (!studentPhone) {
+      setPendingBooking(bookingSlot);
+      setPhoneInput("");
+      setPhoneModalOpen(true);
+      return;
+    }
+
+    await doBooking(bookingSlot);
+  };
+
+  const doBooking = async (slot: Slot) => {
     try {
       const res = await fetch("/api/calendar/book", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ slotId: bookingSlot.id })
+        body: JSON.stringify({ slotId: slot.id })
       });
       if (res.ok) {
         setIsBookingOpen(false);
         fetchCalendarData();
       } else {
         const body = await res.json();
-        toastError(body.error || "Booking failed");
+        if (body.needsPhone) {
+          setPendingBooking(slot);
+          setPhoneInput("");
+          setPhoneModalOpen(true);
+        } else {
+          toastError(body.error || "Booking failed");
+        }
       }
     } catch (err) {
       console.error("Booking error:", err);
+    }
+  };
+
+  const handleSavePhone = async () => {
+    const trimmed = phoneInput.trim();
+    if (!trimmed) {
+      toastError("Ievadiet tālruņa numuru");
+      return;
+    }
+    if (!studentId) {
+      toastError("Student profile not loaded");
+      return;
+    }
+    setPhoneSaving(true);
+    try {
+      const res = await fetch(`/api/students/${studentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: trimmed })
+      });
+      if (res.ok) {
+        setStudentPhone(trimmed);
+        setPhoneModalOpen(false);
+        toastSuccess("Tālruņa numurs saglabāts");
+        if (pendingBooking) {
+          await doBooking(pendingBooking);
+          setPendingBooking(null);
+        }
+      } else {
+        const body = await res.json().catch(() => null);
+        toastError(body?.error || "Neizdevās saglabāt numuru");
+      }
+    } catch (err) {
+      console.error("Save phone error:", err);
+      toastError("Neizdevās saglabāt numuru");
+    } finally {
+      setPhoneSaving(false);
     }
   };
 
@@ -565,6 +637,41 @@ export function StudentCalendar() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Phone capture modal */}
+      {phoneModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold mb-2">Telefona numurs</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Lai rezervētu nodarbību, lūdzu, ievadiet savu tālruņa numuru. Instruktoram tas nepieciešams saziņai.
+            </p>
+            <input
+              type="tel"
+              value={phoneInput}
+              onChange={e => setPhoneInput(e.target.value)}
+              placeholder="+371 2XXXXXXX"
+              className="w-full border px-3 py-2 rounded-md mb-4"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setPhoneModalOpen(false); setPendingBooking(null); }}
+                className="px-4 py-2 text-gray-600"
+              >
+                Atcelt
+              </button>
+              <button
+                onClick={handleSavePhone}
+                disabled={phoneSaving}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium disabled:opacity-50"
+              >
+                {phoneSaving ? "Saglabā..." : "Saglabāt un rezervēt"}
+              </button>
+            </div>
           </div>
         </div>
       )}

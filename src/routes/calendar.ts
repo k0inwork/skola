@@ -414,6 +414,11 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
         res.status(403).json({ error: "Your account has been restricted. Please contact your instructor." });
         return;
       }
+      // Phone required — instructor needs a contact number for the lesson
+      if (!student.phone) {
+        res.status(403).json({ error: "Phone number required to book a lesson.", needsPhone: true });
+        return;
+      }
       studentId = student.id;
 
       // Unpaid students can only book 1 lesson at a time
