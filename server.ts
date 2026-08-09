@@ -81,9 +81,13 @@ async function startServer() {
       return res.json({ status: "ignored", ref });
     }
     res.json({ status: "deploying" });
-    exec("nohup bash scripts/deploy.sh > /tmp/skola-deploy-hook.log 2>&1 &", { cwd: process.env.SKOLA_DIR || "/root/skola" }, (err) => {
-      if (err) console.error("deploy launch error:", err.message);
-    });
+    const deployDir = process.env.SKOLA_DIR || "/root/skola";
+    exec(
+      `systemd-run --no-block --working-directory="${deployDir}" bash -c 'bash scripts/deploy.sh > /tmp/skola-deploy-hook.log 2>&1'`,
+      (err) => {
+        if (err) console.error("deploy launch error:", err.message);
+      }
+    );
   });
 
   // --- Deploy logs ---
