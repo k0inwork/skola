@@ -83,7 +83,7 @@ async function startServer() {
     res.json({ status: "deploying" });
     const deployDir = process.env.SKOLA_DIR || "/root/skola";
     exec(
-      `systemd-run --no-block --working-directory="${deployDir}" bash -c 'bash scripts/deploy.sh > /tmp/skola-deploy-hook.log 2>&1'`,
+      `systemd-run --no-block --setenv=HOME=/root --working-directory="${deployDir}" bash scripts/deploy.sh`,
       (err) => {
         if (err) console.error("deploy launch error:", err.message);
       }

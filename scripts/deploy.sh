@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-SKOLA_DIR="$HOME/skola"
+SKOLA_DIR="${SKOLA_DIR:-/root/skola}"
 LOGDIR="/tmp/skola-deploy"
 mkdir -p "$LOGDIR"
 
