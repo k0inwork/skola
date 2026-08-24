@@ -6,6 +6,7 @@ import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate, bookSlotSchema, rescheduleSchema, respondRescheduleSchema, cancelLessonSchema, updateLessonSchema, moveSlotSchema, workingDaySchema, copyWeekSchema, createLocationSchema } from "../lib/validation.js";
 import { sendNewMessageEmail, sendLocationChangedEmail } from "../lib/mail.js";
+import { audit } from "../lib/audit.js";
 
 const router = Router();
 
@@ -168,6 +169,7 @@ router.post("/working-days", validate(workingDaySchema), async (req, res) => {
     const primaryCity = cities[0] || null;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "working_day_save_denied_role", { instructorId, date });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -243,6 +245,7 @@ router.post("/working-days", validate(workingDaySchema), async (req, res) => {
       emitCalendarUpdate(io, req, { instructorId, date });
     }
 
+    await audit(req, "working_day_saved", { instructorId, date, isWorking, startTime, endTime, cities, moved, movedTo });
     res.json({ success: true, moved, movedTo });
   } catch (err) {
     console.error("Upsert working days error:", err);
@@ -377,6 +380,7 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
     let { slotId, enrollmentId, studentId, instructorId, durationMin } = req.body;
 
     if (!slotId) {
+      await audit(req, "booking_denied_missing_slot_id", {});
       res.status(400).json({ error: "slotId is required" });
       return;
     }
@@ -384,10 +388,12 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
     // Fetch the slot
     const [slot] = await db.select().from(slots).where(eq(slots.id, slotId)).limit(1);
     if (!slot) {
+      await audit(req, "booking_denied_slot_not_found", { slotId });
       res.status(404).json({ error: "Slot not found" });
       return;
     }
     if (slot.isBooked) {
+      await audit(req, "booking_denied_slot_already_booked", { slotId, date: slot.date, startTime: slot.startTime });
       res.status(409).json({ error: "Slot is already booked." });
       return;
     }
@@ -398,6 +404,7 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
       .where(and(eq(slots.id, slotId), eq(slots.isBooked, false)))
       .returning();
     if (!claimed.length) {
+      await audit(req, "booking_denied_slot_race_lost", { slotId, date: slot.date, startTime: slot.startTime });
       res.status(409).json({ error: "Slot was just booked by someone else." });
       return;
     }
@@ -407,15 +414,18 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
     if (req.userRole === "client") {
       const [student] = await db.select().from(students).where(eq(students.userId, req.userId));
       if (!student) {
+        await audit(req, "booking_denied_no_student_profile", { slotId });
         res.status(400).json({ error: "Student profile not found for this user." });
         return;
       }
       if (student.status === "blocked") {
+        await audit(req, "booking_denied_student_blocked", { slotId, studentId: student.id, studentName: `${student.firstName} ${student.lastName}` });
         res.status(403).json({ error: "Your account has been restricted. Please contact your instructor." });
         return;
       }
       // Phone required — instructor needs a contact number for the lesson
       if (!student.phone) {
+        await audit(req, "booking_denied_phone_required", { slotId, studentId: student.id, studentName: `${student.firstName} ${student.lastName}` });
         res.status(403).json({ error: "Phone number required to book a lesson.", needsPhone: true });
         return;
       }
@@ -434,6 +444,7 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
             ne(lessons.status, "canceled")
           ));
         if (activeBookings.length >= 1) {
+          await audit(req, "booking_denied_unpaid_limit", { slotId, studentId, studentName: `${student.firstName} ${student.lastName}`, activeBookings: activeBookings.length });
           res.status(403).json({ error: "You can only book 1 lesson at a time until your first lesson is paid." });
           return;
         }
@@ -501,6 +512,15 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
       emitCalendarUpdate(io, req, { instructorId, date: slot.date });
     }
 
+    await audit(req, "booking_created", {
+      lessonId: lesson.id,
+      slotId,
+      studentId,
+      instructorId,
+      date: slot.date,
+      startTime: slot.startTime,
+      bookedByClient: req.userRole === "client",
+    });
     res.json(lesson);
   } catch (err) {
     console.error("Book lesson error:", err);
@@ -513,6 +533,7 @@ router.post("/mark-lesson-paid", async (req, res) => {
     const { lessonId, studentId } = req.body;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "mark_paid_denied_role", { lessonId });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -524,6 +545,8 @@ router.post("/mark-lesson-paid", async (req, res) => {
     await db.update(students)
       .set({ status: "active" })
       .where(eq(students.id, studentId));
+
+    await audit(req, "lesson_marked_paid", { lessonId, studentId });
 
     const io = req.app.get("io");
     if (io) {
@@ -543,12 +566,14 @@ router.post("/update-lesson/:lessonId", validate(updateLessonSchema), async (req
     const { notes, location, city, amount } = req.body;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "lesson_update_denied_role", { lessonId });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
     const [existing] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
     if (!existing) {
+      await audit(req, "lesson_update_denied_not_found", { lessonId });
       res.status(404).json({ error: "Lesson not found" });
       return;
     }
@@ -556,6 +581,8 @@ router.post("/update-lesson/:lessonId", validate(updateLessonSchema), async (req
     await db.update(lessons)
       .set({ notes, location, city, amount: amount || null })
       .where(eq(lessons.id, lessonId));
+
+    await audit(req, "lesson_updated", { lessonId, studentId: existing.studentId, instructorId: existing.instructorId, notesChanged: notes !== undefined, locationChanged: !!location && location !== existing.location, cityChanged: city !== undefined, amountChanged: amount !== undefined });
 
     // Notify student if location changed
     if (location && location !== existing.location) {
@@ -596,6 +623,7 @@ router.post("/cancel-lesson/:lessonId", validate(cancelLessonSchema), async (req
     if (req.userRole === "client") {
       const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
       if (!student || lesson.studentId !== student.id) {
+        await audit(req, "cancel_denied_not_owner", { lessonId, lessonStudentId: lesson.studentId });
         res.status(403).json({ error: "Forbidden: You can only cancel your own lessons" });
         return;
       }
@@ -658,6 +686,7 @@ router.post("/cancel-lesson/:lessonId", validate(cancelLessonSchema), async (req
       console.error("Email notification error:", mailErr);
     }
 
+    await audit(req, "lesson_cancelled", { lessonId, date: lesson.date, startTime: lesson.startTime, reason: reason ?? null, cancelledByClient: req.userRole === "client" });
     res.json({ success: true });
   } catch (err) {
     console.error("Cancel lesson error:", err);
@@ -672,12 +701,14 @@ router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (r
     const { targetSlotId } = req.body;
 
     if (!targetSlotId) {
+      await audit(req, "reschedule_denied_missing_target", { lessonId });
       res.status(400).json({ error: "targetSlotId is required — pick an existing free slot" });
       return;
     }
 
     const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
     if (!lesson) {
+      await audit(req, "reschedule_denied_lesson_not_found", { lessonId });
       res.status(404).json({ error: "Lesson not found" });
       return;
     }
@@ -685,6 +716,7 @@ router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (r
     if (req.userRole === "client") {
       const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
       if (!student || lesson.studentId !== student.id) {
+        await audit(req, "reschedule_denied_not_owner", { lessonId, lessonStudentId: lesson.studentId });
         res.status(403).json({ error: "Forbidden" });
         return;
       }
@@ -693,14 +725,17 @@ router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (r
     // Validate target slot exists and is free
     const [targetSlot] = await db.select().from(slots).where(eq(slots.id, targetSlotId)).limit(1);
     if (!targetSlot) {
+      await audit(req, "reschedule_denied_target_not_found", { lessonId, targetSlotId });
       res.status(404).json({ error: "Target slot not found" });
       return;
     }
     if (targetSlot.isBooked) {
+      await audit(req, "reschedule_denied_target_booked", { lessonId, targetSlotId, date: targetSlot.date, startTime: targetSlot.startTime });
       res.status(409).json({ error: "Target slot is already booked." });
       return;
     }
     if (targetSlot.instructorId !== lesson.instructorId) {
+      await audit(req, "reschedule_denied_wrong_instructor", { lessonId, targetSlotId, slotInstructorId: targetSlot.instructorId });
       res.status(400).json({ error: "Target slot belongs to a different instructor" });
       return;
     }
@@ -752,6 +787,7 @@ router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (r
         if (oldDate !== newDate) emitCalendarUpdate(io, req, { instructorId: lesson.instructorId, date: oldDate });
       }
 
+      await audit(req, "reschedule_requested", { lessonId, targetSlotId, studentId: lesson.studentId, instructorId: lesson.instructorId, from: `${oldDate} ${oldTime}`, to: `${newDate} ${newTime}` });
       res.json({ success: true, pending: true });
     } else {
       // Instructor/admin reschedules instantly
@@ -802,6 +838,7 @@ router.post("/reschedule-lesson/:lessonId", validate(rescheduleSchema), async (r
         console.error("Email notification error:", mailErr);
       }
 
+      await audit(req, "reschedule_completed", { lessonId, targetSlotId, studentId: lesson.studentId, instructorId: lesson.instructorId, from: `${oldDate} ${oldTime}`, to: `${newDate} ${newTime}`, rescheduledBy: req.userRole });
       res.json({ success: true });
     }
   } catch (err) {
@@ -817,22 +854,26 @@ router.post("/reschedule-lesson/:lessonId/respond", validate(respondRescheduleSc
     const { action } = req.body;
 
     if (!action || !["approve", "decline"].includes(action)) {
+      await audit(req, "reschedule_respond_denied_invalid_action", { lessonId, action });
       res.status(400).json({ error: "action must be 'approve' or 'decline'" });
       return;
     }
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "reschedule_respond_denied_role", { lessonId, action });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
     const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
     if (!lesson) {
+      await audit(req, "reschedule_respond_denied_lesson_not_found", { lessonId, action });
       res.status(404).json({ error: "Lesson not found" });
       return;
     }
 
     if (lesson.status !== "reschedule_pending") {
+      await audit(req, "reschedule_respond_denied_not_pending", { lessonId, action, status: lesson.status });
       res.status(400).json({ error: "Lesson is not pending reschedule" });
       return;
     }
@@ -854,6 +895,7 @@ router.post("/reschedule-lesson/:lessonId/respond", validate(respondRescheduleSc
       )).limit(1);
 
       if (!heldSlot) {
+        await audit(req, "reschedule_approve_denied_slot_gone", { lessonId, proposedDate: lesson.proposedDate, proposedStartTime: lesson.proposedStartTime });
         res.status(409).json({ error: "Target slot no longer available." });
         return;
       }
@@ -908,6 +950,8 @@ router.post("/reschedule-lesson/:lessonId/respond", validate(respondRescheduleSc
       } catch (mailErr) {
         console.error("Email notification error:", mailErr);
       }
+
+      await audit(req, "reschedule_approved", { lessonId, studentId: lesson.studentId, instructorId: lesson.instructorId, from: oldSlot, to: newSlot });
     } else {
       // Decline — revert lesson and free the held slot
       await db.update(lessons)
@@ -964,6 +1008,8 @@ router.post("/reschedule-lesson/:lessonId/respond", validate(respondRescheduleSc
       } catch (mailErr) {
         console.error("Email notification error:", mailErr);
       }
+
+      await audit(req, "reschedule_declined", { lessonId, studentId: lesson.studentId, instructorId: lesson.instructorId, from: oldSlot, to: newSlot });
     }
 
     res.json({ success: true });
@@ -979,17 +1025,20 @@ router.post("/cancel-reschedule/:lessonId", async (req, res) => {
     const { lessonId } = req.params;
 
     if (req.userRole !== "client") {
+      await audit(req, "cancel_reschedule_denied_role", { lessonId });
       res.status(403).json({ error: "Only students can cancel pending reschedules" });
       return;
     }
 
     const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId)).limit(1);
     if (!lesson) {
+      await audit(req, "cancel_reschedule_denied_lesson_not_found", { lessonId });
       res.status(404).json({ error: "Lesson not found" });
       return;
     }
 
     if (lesson.status !== "reschedule_pending") {
+      await audit(req, "cancel_reschedule_denied_not_pending", { lessonId, status: lesson.status });
       res.status(400).json({ error: "Lesson is not pending reschedule" });
       return;
     }
@@ -997,6 +1046,7 @@ router.post("/cancel-reschedule/:lessonId", async (req, res) => {
     // Verify student owns this lesson
     const [student] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
     if (!student || lesson.studentId !== student.id) {
+      await audit(req, "cancel_reschedule_denied_not_owner", { lessonId, lessonStudentId: lesson.studentId });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -1054,6 +1104,7 @@ router.post("/cancel-reschedule/:lessonId", async (req, res) => {
       }
     }
 
+    await audit(req, "reschedule_request_cancelled", { lessonId, studentId: lesson.studentId, instructorId: lesson.instructorId, proposedDate: lesson.proposedDate });
     res.json({ success: true });
   } catch (err) {
     console.error("Cancel reschedule error:", err);
@@ -1065,6 +1116,7 @@ router.post("/cancel-reschedule/:lessonId", async (req, res) => {
 router.get("/notifications", async (req, res) => {
   try {
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "notifications_denied_role", {});
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -1128,11 +1180,13 @@ router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
     };
 
     if (!instructorId || !sourceWeekStart || !targetWeekStart) {
+      await audit(req, "week_copy_denied_missing_params", { instructorId, sourceWeekStart, targetWeekStart });
       res.status(400).json({ error: "instructorId, sourceWeekStart, targetWeekStart required" });
       return;
     }
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "week_copy_denied_role", { instructorId, sourceWeekStart, targetWeekStart });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -1248,6 +1302,7 @@ router.post("/copy-week", validate(copyWeekSchema), async (req, res) => {
       emitCalendarUpdate(io, req, { instructorId });
     }
 
+    await audit(req, "week_copied", { instructorId, sourceWeekStart, targetWeekStart, copied });
     res.json({ success: true, copied });
   } catch (err) {
     console.error("Copy week error:", err);
@@ -1265,18 +1320,21 @@ router.patch("/slots/:slotId", validate(moveSlotSchema), async (req, res) => {
     if (!startTime || !endTime) {
       // Allow city/location-only updates without a time change
       if (!isCityOrLocUpdate) {
+        await audit(req, "slot_update_denied_missing_times", { slotId });
         res.status(400).json({ error: "startTime and endTime required" });
         return;
       }
     }
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "slot_update_denied_role", { slotId });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
     const [slot] = await db.select().from(slots).where(eq(slots.id, slotId)).limit(1);
     if (!slot) {
+      await audit(req, "slot_update_denied_not_found", { slotId });
       res.status(404).json({ error: "Slot not found" });
       return;
     }
@@ -1312,6 +1370,7 @@ router.patch("/slots/:slotId", validate(moveSlotSchema), async (req, res) => {
         const sStart = sH * 60 + sM;
         const sEnd = eH * 60 + eM;
         if (newStartMin < sEnd && newEndMin > sStart) {
+          await audit(req, "slot_update_denied_overlap", { slotId, date: targetDate, startTime: effectiveStart, endTime: effectiveEnd, conflictWith: s.id });
           res.status(409).json({ error: "Slot overlaps with another slot" });
           return;
         }
@@ -1388,6 +1447,7 @@ router.patch("/slots/:slotId", validate(moveSlotSchema), async (req, res) => {
       emitCalendarUpdate(io, req, { instructorId: slot.instructorId, date: slot.date });
     }
 
+    await audit(req, "slot_updated", { slotId, instructorId: slot.instructorId, date: targetDate, startTime: effectiveStart, endTime: effectiveEnd, city: city ?? slot.city, wasBooked: slot.isBooked });
     res.json({ success: true });
   } catch (err) {
     console.error("Move slot error:", err);
@@ -1401,17 +1461,20 @@ router.delete("/slots/:slotId", async (req, res) => {
     const { slotId } = req.params;
 
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "slot_delete_denied_role", { slotId });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
 
     const [slot] = await db.select().from(slots).where(eq(slots.id, slotId)).limit(1);
     if (!slot) {
+      await audit(req, "slot_delete_denied_not_found", { slotId });
       res.status(404).json({ error: "Slot not found" });
       return;
     }
 
     if (slot.isBooked) {
+      await audit(req, "slot_delete_denied_booked", { slotId, date: slot.date, startTime: slot.startTime, lessonId: slot.lessonId });
       res.status(409).json({ error: "Cannot delete a booked slot" });
       return;
     }
@@ -1423,6 +1486,7 @@ router.delete("/slots/:slotId", async (req, res) => {
       emitCalendarUpdate(io, req, { instructorId: slot.instructorId, date: slot.date });
     }
 
+    await audit(req, "slot_deleted", { slotId, instructorId: slot.instructorId, date: slot.date, startTime: slot.startTime });
     res.json({ success: true });
   } catch (err) {
     console.error("Delete slot error:", err);
@@ -1456,15 +1520,18 @@ router.get("/locations", async (req, res) => {
 router.post("/locations", validate(createLocationSchema), async (req, res) => {
   try {
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "location_create_denied_role", {});
       res.status(403).json({ error: "Forbidden" });
       return;
     }
     const { name, address, lat, lng, city } = req.body;
     if (!name) {
+      await audit(req, "location_create_denied_missing_name", {});
       res.status(400).json({ error: "Name is required" });
       return;
     }
     const [loc] = await db.insert(locations).values({ name, address, lat, lng, city: city || "Olaine" }).returning();
+    await audit(req, "location_created", { locationId: loc.id, name, city: city || "Olaine" });
     res.status(201).json(loc);
   } catch (err) {
     console.error("Create location error:", err);
@@ -1475,10 +1542,12 @@ router.post("/locations", validate(createLocationSchema), async (req, res) => {
 router.delete("/locations/:id", async (req, res) => {
   try {
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "location_delete_denied_role", { locationId: req.params.id });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
     await db.delete(locations).where(eq(locations.id, req.params.id));
+    await audit(req, "location_deleted", { locationId: req.params.id });
     res.json({ success: true });
   } catch (err) {
     console.error("Delete location error:", err);

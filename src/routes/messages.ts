@@ -4,6 +4,7 @@ import { db } from "../db/index.js";
 import { messages, users, students, lessons, slots } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { sendNewMessageEmail } from "../lib/mail.js";
+import { audit } from "../lib/audit.js";
 
 const router = Router();
 
@@ -115,6 +116,7 @@ router.post("/", async (req, res) => {
     const { recipientId, content, type, lessonId, proposedDate, proposedStartTime, proposedEndTime } = req.body;
 
     if (!recipientId || !content) {
+      await audit(req, "message_denied_missing_fields", { recipientId: recipientId ?? null });
       res.status(400).json({ error: "recipientId and content are required" });
       return;
     }
@@ -123,6 +125,7 @@ router.post("/", async (req, res) => {
     if (req.userRole === "client") {
       const [recipientUser] = await db.select().from(users).where(eq(users.id, recipientId)).limit(1);
       if (!recipientUser || (recipientUser.role !== "instructor" && recipientUser.role !== "admin")) {
+        await audit(req, "message_denied_client_recipient", { recipientId, recipientRole: recipientUser?.role ?? null });
         res.status(403).json({ error: "Forbidden: clients can only message instructors" });
         return;
       }
@@ -136,6 +139,7 @@ router.post("/", async (req, res) => {
         eq(slots.startTime, proposedStartTime)
       )).limit(1);
       if (!targetSlot) {
+        await audit(req, "reschedule_request_denied_no_slot", { proposedDate, proposedStartTime, lessonId: lessonId ?? null });
         res.status(400).json({ error: "No available slot found for the proposed date and time. Please pick a time from the calendar." });
         return;
       }
@@ -173,6 +177,7 @@ router.post("/", async (req, res) => {
       console.error("Email notification error:", mailErr);
     }
 
+    await audit(req, "message_sent", { messageId: msg.id, recipientId, type: type || "chat", lessonId: lessonId ?? null });
     res.status(201).json(msg);
   } catch (err) {
     console.error("Send message error:", err);
@@ -187,18 +192,21 @@ router.post("/:messageId/respond", async (req, res) => {
     const { action } = req.body; // "approve" or "decline"
 
     if (!action || !["approve", "decline"].includes(action)) {
+      await audit(req, "message_respond_denied_invalid_action", { messageId, action });
       res.status(400).json({ error: "action must be 'approve' or 'decline'" });
       return;
     }
 
     const [originalMsg] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
     if (!originalMsg) {
+      await audit(req, "message_respond_denied_not_found", { messageId, action });
       res.status(404).json({ error: "Message not found" });
       return;
     }
 
     // Only the recipient (instructor) can respond
     if (originalMsg.recipientId !== req.userId) {
+      await audit(req, "message_respond_denied_not_recipient", { messageId, action, messageRecipientId: originalMsg.recipientId });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -312,6 +320,14 @@ router.post("/:messageId/respond", async (req, res) => {
       }
     }
 
+    await audit(req, action === "approve" ? "reschedule_message_approved" : "reschedule_message_declined", {
+      messageId,
+      responseMessageId: responseMsg.id,
+      lessonId: originalMsg.lessonId,
+      originalSenderId: originalMsg.senderId,
+      proposedDate: originalMsg.proposedDate,
+      proposedStartTime: originalMsg.proposedStartTime,
+    });
     res.json(responseMsg);
   } catch (err) {
     console.error("Respond to message error:", err);

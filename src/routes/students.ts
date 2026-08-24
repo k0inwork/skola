@@ -4,6 +4,7 @@ import { db } from "../db/index";
 import { students, users, notes, lessons } from "../db/schema";
 import { requireAuth } from "../middleware/auth";
 import { validate, createStudentSchema, updateStudentSchema } from "../lib/validation";
+import { audit } from "../lib/audit.js";
 import { hash } from "bcryptjs";
 
 const router = Router();
@@ -14,6 +15,7 @@ router.get("/", async (req, res) => {
   try {
     // Only instructors/admins can list all students
     if (req.userRole === "client") {
+      await audit(req, "student_list_denied_role", {});
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -117,6 +119,7 @@ router.post("/", validate(createStudentSchema), async (req, res) => {
     }
 
     const [student] = await db.insert(students).values({...studentData, userId}).returning();
+    await audit(req, "student_created", { studentId: student.id, studentName: `${student.firstName} ${student.lastName}`, accountCreated: !!(createAccount && studentData.email && password) });
     res.status(201).json(student);
   } catch (err) {
     console.error("Create student error:", err);
@@ -128,6 +131,7 @@ router.get("/:id", async (req, res) => {
   try {
     const student = await db.select().from(students).where(eq(students.id, req.params.id)).limit(1);
     if (student.length === 0) {
+      await audit(req, "student_view_denied_not_found", { studentId: req.params.id });
       res.status(404).json({ error: "Student not found" });
       return;
     }
@@ -135,6 +139,7 @@ router.get("/:id", async (req, res) => {
     if (req.userRole === "client") {
       const [ownStudent] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
       if (!ownStudent || ownStudent.id !== req.params.id) {
+        await audit(req, "student_view_denied_not_owner", { studentId: req.params.id });
         res.status(403).json({ error: "Forbidden" });
         return;
       }
@@ -152,6 +157,7 @@ router.patch("/:id", validate(updateStudentSchema), async (req, res) => {
     if (req.userRole === "client") {
       const [ownStudent] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
       if (!ownStudent || ownStudent.id !== req.params.id) {
+        await audit(req, "student_update_denied_not_owner", { studentId: req.params.id });
         res.status(403).json({ error: "Forbidden" });
         return;
       }
@@ -162,11 +168,13 @@ router.patch("/:id", validate(updateStudentSchema), async (req, res) => {
       .set({ ...studentData, updatedAt: new Date() })
       .where(eq(students.id, req.params.id))
       .returning();
-    
+
     if (!updated) {
+      await audit(req, "student_update_denied_not_found", { studentId: req.params.id });
       res.status(404).json({ error: "Student not found" });
       return;
     }
+    await audit(req, "student_updated", { studentId: updated.id, updatedFields: Object.keys(studentData), updatedByOwner: req.userRole === "client" });
     res.json(updated);
   } catch (err) {
     console.error("Update student error:", err);
@@ -180,6 +188,7 @@ router.get("/:id/lessons", async (req, res) => {
     if (req.userRole === "client") {
       const [ownStudent] = await db.select().from(students).where(eq(students.userId, req.userId)).limit(1);
       if (!ownStudent || ownStudent.id !== req.params.id) {
+        await audit(req, "student_lessons_denied_not_owner", { studentId: req.params.id });
         res.status(403).json({ error: "Forbidden" });
         return;
       }

@@ -6,6 +6,7 @@ import { generateTokenPair, requireAuth, verifyToken } from "../middleware/auth"
 import crypto from "crypto";
 
 import { config } from "../lib/config.js";
+import { audit } from "../lib/audit.js";
 
 const router = Router();
 
@@ -74,6 +75,7 @@ router.get("/google/callback", async (req, res) => {
 
     if (!tokenRes.ok) {
       console.error(await tokenRes.text());
+      await audit(req, "oauth_denied_token_exchange_failed", {});
       res.status(400).send("Failed to exchange code for token");
       return;
     }
@@ -88,6 +90,7 @@ router.get("/google/callback", async (req, res) => {
     const userInfo = await userRes.json();
 
     if (!userInfo.email) {
+      await audit(req, "oauth_denied_no_email", {});
       res.status(400).send("No email found in Google account");
       return;
     }
@@ -113,11 +116,14 @@ router.get("/google/callback", async (req, res) => {
           email: userInfo.email,
         });
       }
+
+      await audit(req, "oauth_user_created", { newUserId: user.id, newEmail: userInfo.email, role: user.role });
     } else {
       // Check if student is blocked
       if (!isAdmin) {
         const [studentProfile] = await db.select().from(students).where(eq(students.userId, user.id)).limit(1);
         if (studentProfile?.status === "blocked") {
+          await audit(req, "oauth_login_denied_blocked", { userId: user.id, email: userInfo.email });
           const appUrl = config.APP_URL || "/";
           res.redirect(`${appUrl}/login?blocked=1`);
           return;
@@ -128,6 +134,7 @@ router.get("/google/callback", async (req, res) => {
       if (isAdmin && user.role === "client") {
         await db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));
         user = { ...user, role: "admin" };
+        await audit(req, "oauth_role_upgraded", { userId: user.id, email: userInfo.email, newRole: "admin" });
       }
 
       // Ensure student profile exists for clients
@@ -194,6 +201,7 @@ router.get("/google/callback", async (req, res) => {
       name: userInfo.given_name || userInfo.name || "",
       picture: userInfo.picture || "",
     });
+    await audit(req, "oauth_login_success", { userId: user.id, email: userInfo.email, role: user.role });
     res.redirect(`${appUrl}/oauth-callback?${params.toString()}`);
   } catch (err) {
     console.error("Google OAuth error:", err);
@@ -217,6 +225,7 @@ router.post("/refresh", (req, res) => {
     });
     res.json({ accessToken, refreshToken: newRefresh });
   } catch {
+    audit(req, "refresh_token_failed", {}).catch(() => {});
     res.status(401).json({ error: "Invalid or expired refresh token" });
   }
 });

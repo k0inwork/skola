@@ -4,6 +4,7 @@ import { db } from "../db/index.js";
 import { payments, students, lessons, enrollments } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate, createPaymentSchema, updatePaymentSchema } from "../lib/validation.js";
+import { audit } from "../lib/audit.js";
 
 async function getClientStudentId(req: any): Promise<string | null> {
   if (req.userRole !== "client") return null;
@@ -119,6 +120,7 @@ router.get("/stats", async (req, res) => {
 
 router.post("/", async (req, res) => {
   if (req.userRole !== "admin" && req.userRole !== "instructor") {
+    await audit(req, "payment_create_denied_role", { studentId: req.body?.studentId });
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -126,6 +128,7 @@ router.post("/", async (req, res) => {
     const { studentId, amount, paidAt, method, reference, comment, status } = req.body;
 
     if (!studentId || !amount || !paidAt) {
+      await audit(req, "payment_create_denied_missing_fields", { studentId: studentId ?? null, amount: amount ?? null, paidAt: paidAt ?? null });
       res.status(400).json({ error: "studentId, amount, and paidAt are required" });
       return;
     }
@@ -156,6 +159,7 @@ router.post("/", async (req, res) => {
       status: status || "paid",
     }).returning();
 
+    await audit(req, "payment_created", { paymentId: payment.id, studentId, amount, paidAt, method: method ?? null, status: status || "paid" });
     res.status(201).json(payment);
   } catch (err) {
     console.error("Create payment error:", err);
@@ -165,6 +169,7 @@ router.post("/", async (req, res) => {
 
 router.patch("/:id", validate(updatePaymentSchema), async (req, res) => {
   if (req.userRole !== "admin" && req.userRole !== "instructor") {
+    await audit(req, "payment_update_denied_role", { paymentId: req.params.id });
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -174,9 +179,11 @@ router.patch("/:id", validate(updatePaymentSchema), async (req, res) => {
       .where(eq(payments.id, req.params.id))
       .returning();
     if (!updated) {
+      await audit(req, "payment_update_denied_not_found", { paymentId: req.params.id });
       res.status(404).json({ error: "Payment not found" });
       return;
     }
+    await audit(req, "payment_updated", { paymentId: updated.id, studentId: updated.studentId, updatedFields: Object.keys(req.body) });
     res.json(updated);
   } catch (err) {
     console.error("Update payment error:", err);
@@ -187,10 +194,12 @@ router.patch("/:id", validate(updatePaymentSchema), async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     if (req.userRole !== "admin" && req.userRole !== "instructor") {
+      await audit(req, "payment_delete_denied_role", { paymentId: req.params.id });
       res.status(403).json({ error: "Forbidden" });
       return;
     }
     await db.delete(payments).where(eq(payments.id, req.params.id));
+    await audit(req, "payment_deleted", { paymentId: req.params.id });
     res.json({ success: true });
   } catch (err) {
     console.error("Delete payment error:", err);
