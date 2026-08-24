@@ -376,8 +376,10 @@ router.get("/slots", async (req, res) => {
 
 // Book a slot by slotId
 router.post("/book", validate(bookSlotSchema), async (req, res) => {
+  let slotId: string | undefined;
   try {
-    let { slotId, enrollmentId, studentId, instructorId, durationMin } = req.body;
+    let { enrollmentId, studentId, instructorId, durationMin } = req.body;
+    ({ slotId } = req.body);
 
     if (!slotId) {
       await audit(req, "booking_denied_missing_slot_id", {});
@@ -398,19 +400,9 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
       return;
     }
 
-    // Atomically claim the slot — prevents double-booking race condition
-    const claimed = await db.update(slots)
-      .set({ isBooked: true })
-      .where(and(eq(slots.id, slotId), eq(slots.isBooked, false)))
-      .returning();
-    if (!claimed.length) {
-      await audit(req, "booking_denied_slot_race_lost", { slotId, date: slot.date, startTime: slot.startTime });
-      res.status(409).json({ error: "Slot was just booked by someone else." });
-      return;
-    }
-
     instructorId = slot.instructorId;
 
+    // Validate the client BEFORE claiming the slot — a denial must never leave the slot stuck busy
     if (req.userRole === "client") {
       const [student] = await db.select().from(students).where(eq(students.userId, req.userId));
       if (!student) {
@@ -460,6 +452,17 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
         firstStudent = inserted;
       }
       studentId = firstStudent.id;
+    }
+
+    // Atomically claim the slot — prevents double-booking race condition
+    const claimed = await db.update(slots)
+      .set({ isBooked: true })
+      .where(and(eq(slots.id, slotId), eq(slots.isBooked, false)))
+      .returning();
+    if (!claimed.length) {
+      await audit(req, "booking_denied_slot_race_lost", { slotId, date: slot.date, startTime: slot.startTime });
+      res.status(409).json({ error: "Slot was just booked by someone else." });
+      return;
     }
 
     if (!enrollmentId) {
@@ -524,6 +527,13 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
     res.json(lesson);
   } catch (err) {
     console.error("Book lesson error:", err);
+    // If we already claimed the slot but the booking failed downstream, release it
+    if (slotId) {
+      await db.update(slots)
+        .set({ isBooked: false, lessonId: null })
+        .where(and(eq(slots.id, slotId), eq(slots.isBooked, true), isNull(slots.lessonId)))
+        .catch(() => {});
+    }
     res.status(500).json({ error: "Internal server error: " + (err instanceof Error ? err.message : String(err)) });
   }
 });
