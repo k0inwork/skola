@@ -84,6 +84,33 @@ describe("Validation schemas", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it("accepts instructor booking with amount/location/city", () => {
+      const result = bookSlotSchema.safeParse({
+        slotId: "550e8400-e29b-41d4-a716-446655440000",
+        studentId: "550e8400-e29b-41d4-a716-446655440001",
+        amount: "30",
+        location: "Rīgas iela 1",
+        city: "Olaine",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects invalid amount format", () => {
+      const result = bookSlotSchema.safeParse({
+        slotId: "550e8400-e29b-41d4-a716-446655440000",
+        amount: "abc",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("allows empty amount string", () => {
+      const result = bookSlotSchema.safeParse({
+        slotId: "550e8400-e29b-41d4-a716-446655440000",
+        amount: "",
+      });
+      expect(result.success).toBe(true);
+    });
   });
 
   describe("rescheduleSchema", () => {

@@ -46,6 +46,10 @@ export const bookSlotSchema = z.object({
   studentId: z.string().uuid().optional(),
   instructorId: z.string().uuid().optional(),
   durationMin: z.number().int().min(15).max(480).optional(),
+  // Instructor-only overrides when booking on behalf of a student
+  amount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional().or(z.literal("")),
+  location: z.string().max(200).optional(),
+  city: z.string().max(100).optional(),
 });
 
 export const rescheduleSchema = z.object({

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, gte, lte, inArray, desc, isNull, ne } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { instructorWorkingDays, lessons, users, students, enrollments, slots, instructorWorkingDayCities } from "../db/schema.js";
+import { instructorWorkingDays, lessons, users, students, enrollments, slots, instructorWorkingDayCities, messages as msgs } from "../db/schema.js";
 import { locations } from "../db/schema.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate, bookSlotSchema, rescheduleSchema, respondRescheduleSchema, cancelLessonSchema, updateLessonSchema, moveSlotSchema, workingDaySchema, copyWeekSchema, createLocationSchema } from "../lib/validation.js";
@@ -378,8 +378,15 @@ router.get("/slots", async (req, res) => {
 router.post("/book", validate(bookSlotSchema), async (req, res) => {
   let slotId: string | undefined;
   try {
-    let { enrollmentId, studentId, instructorId, durationMin } = req.body;
+    let { enrollmentId, studentId, instructorId, durationMin, amount, location, city } = req.body;
     ({ slotId } = req.body);
+    const bookedByInstructor = req.userRole !== "client" && !!studentId;
+    // Amount/location/city overrides are only for instructor-side booking
+    if (!bookedByInstructor) {
+      amount = undefined;
+      location = undefined;
+      city = undefined;
+    }
 
     if (!slotId) {
       await audit(req, "booking_denied_missing_slot_id", {});
@@ -500,9 +507,10 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
       endTime: slot.endTime,
       durationMin: durationMin || 90,
       status: "scheduled",
-      location: slot.location || workingDay?.location || null,
-      city: slot.city || workingDay?.city || null,
+      location: location || slot.location || workingDay?.location || null,
+      city: city || slot.city || workingDay?.city || null,
       vehicle: workingDay?.vehicle || null,
+      ...(amount ? { amount } : {}),
     }).returning();
 
     // Mark slot as booked
@@ -513,6 +521,39 @@ router.post("/book", validate(bookSlotSchema), async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       emitCalendarUpdate(io, req, { instructorId, date: slot.date });
+    }
+
+    // Notify the student when the instructor booked on their behalf
+    if (bookedByInstructor) {
+      try {
+        const [bookedStudent] = await db.select().from(students).where(eq(students.id, studentId)).limit(1);
+        if (bookedStudent?.userId) {
+          const content = `Instruktors ieplānoja jūsu nodarbību ${lesson.date} (${lesson.startTime}-${lesson.endTime})${lesson.city ? `, ${lesson.city}` : ""}.`;
+          const [msg] = await db.insert(msgs).values({
+            senderId: req.userId!,
+            recipientId: bookedStudent.userId,
+            content,
+            type: "lesson_booked",
+            lessonId: lesson.id,
+          }).returning();
+
+          if (io && msg) {
+            io.emit("new_message", { message: msg, recipientId: bookedStudent.userId });
+          }
+
+          try {
+            const [studentUser] = await db.select().from(users).where(eq(users.id, bookedStudent.userId)).limit(1);
+            if (studentUser?.email) {
+              await sendNewMessageEmail(studentUser.email, "Instruktors", content);
+            }
+          } catch (mailErr) {
+            console.error("Email notification error:", mailErr);
+          }
+        }
+      } catch (notifErr) {
+        // Notification failure must never fail the booking itself
+        console.error("Booking notification error:", notifErr);
+      }
     }
 
     await audit(req, "booking_created", {

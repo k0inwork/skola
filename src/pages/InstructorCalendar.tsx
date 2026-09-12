@@ -5,7 +5,7 @@ import { toastSuccess, toastError, toast } from "../lib/notify";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { CityChips } from "../components/CityChips";
 const LocationMapPicker = lazy(() => import("../components/LocationMapPicker"));
-import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, User as UserIcon, CheckCircle2, MapPin, GripVertical, XCircle, X, Trash2, Phone } from "lucide-react";
 import clsx from "clsx";
 import { io } from "socket.io-client";
 
@@ -127,6 +127,16 @@ export function InstructorCalendar() {
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [cancelLesson, setCancelLesson] = useState<BookedLesson | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  // Instructor booking-for-student state
+  const [bookingSlot, setBookingSlot] = useState<Slot | null>(null);
+  const [bookingSearch, setBookingSearch] = useState("");
+  const [bookingStudents, setBookingStudents] = useState<any[]>([]);
+  const [bookingStudentsLoading, setBookingStudentsLoading] = useState(false);
+  const [bookingStudentId, setBookingStudentId] = useState<string | null>(null);
+  const [bookingAmount, setBookingAmount] = useState("");
+  const [bookingLocation, setBookingLocation] = useState("");
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
 
   // Detect mobile on mount and resize
   useEffect(() => {
@@ -350,6 +360,69 @@ export function InstructorCalendar() {
     } catch (err) { console.error(err); toastError("Error updating lesson"); }
   };
 
+  // --- Instructor booking-for-student ---
+
+  // Debounced student search when the booking dialog is open
+  useEffect(() => {
+    if (!bookingSlot) return;
+    const t = setTimeout(async () => {
+      setBookingStudentsLoading(true);
+      try {
+        const q = bookingSearch.trim() ? `&search=${encodeURIComponent(bookingSearch.trim())}&limit=10` : "&limit=10";
+        const res = await fetch(`/api/students?${q}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = res.ok ? await res.json() : { data: [] };
+        setBookingStudents(data.data || []);
+      } catch (err) {
+        console.error(err);
+        setBookingStudents([]);
+      } finally {
+        setBookingStudentsLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [bookingSlot, bookingSearch, token]);
+
+  const openBookingDialog = (slot: Slot) => {
+    setBookingSlot(slot);
+    setBookingSearch("");
+    setBookingStudents([]);
+    setBookingStudentId(null);
+    setBookingAmount("");
+    setBookingLocation("");
+  };
+
+  const handleBookForStudent = async () => {
+    if (!bookingSlot || !bookingStudentId) return;
+    setBookingSubmitting(true);
+    try {
+      const res = await fetch("/api/calendar/book", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          slotId: bookingSlot.id,
+          studentId: bookingStudentId,
+          ...(bookingAmount ? { amount: bookingAmount } : {}),
+          ...(bookingLocation ? { location: bookingLocation } : {}),
+          ...(bookingSlot.city ? { city: bookingSlot.city } : {}),
+        })
+      });
+      if (res.ok) {
+        setBookingSlot(null);
+        fetchCalendarData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toastError(data.error || "Neizdevās rezervēt nodarbību");
+      }
+    } catch (err) {
+      console.error(err);
+      toastError("Kļūda rezervējot nodarbību");
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
   const handleReschedule = async () => {
     if (!rescheduleLesson || !selectedTargetSlotId) return;
     try {
@@ -561,6 +634,7 @@ export function InstructorCalendar() {
       onClick={() => {
         if (moveJustFinishedRef.current || touchDragSlot) return;
         if (slot.lesson) setSelectedSlot(slot);
+        else if (slot.isAvailable && role !== "client") openBookingDialog(slot);
       }}
       onTouchStart={(e) => handleSlotTouchStart(e, slot)}
       onTouchMove={handleSlotTouchMove}
@@ -1090,7 +1164,7 @@ export function InstructorCalendar() {
                               });
                             }
                           }}
-                          onClick={(e) => { e.stopPropagation(); if (moveJustFinishedRef.current) return; if (slot.lesson) setSelectedSlot(slot); }}
+                          onClick={(e) => { e.stopPropagation(); if (moveJustFinishedRef.current) return; if (slot.lesson) setSelectedSlot(slot); else if (slot.isAvailable && role !== "client") openBookingDialog(slot); }}
                           className={clsx(
                             "absolute left-1.5 right-1.5 rounded border transition-all select-none",
                             isMoving ? "z-30 shadow-lg ring-2 ring-emerald-400 opacity-80" : slot.lesson ? "z-20" : "z-10",
@@ -1304,6 +1378,15 @@ export function InstructorCalendar() {
                       {selectedSlot.lesson.studentFirstName} {selectedSlot.lesson.studentLastName}
                     </p>
                     <p className="text-sm text-gray-500">{selectedSlot.time} – {selectedSlot.endTime}</p>
+                    {selectedSlot.lesson.studentPhone && (
+                      <a
+                        href={`tel:${selectedSlot.lesson.studentPhone}`}
+                        className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        {selectedSlot.lesson.studentPhone}
+                      </a>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -1477,6 +1560,15 @@ export function InstructorCalendar() {
                         {selectedSlot.lesson.studentFirstName} {selectedSlot.lesson.studentLastName}
                       </p>
                       <p className="text-sm text-gray-500">{selectedSlot.time} – {selectedSlot.endTime}</p>
+                      {selectedSlot.lesson.studentPhone && (
+                        <a
+                          href={`tel:${selectedSlot.lesson.studentPhone}`}
+                          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                          {selectedSlot.lesson.studentPhone}
+                        </a>
+                      )}
                     </div>
                   </div>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${selectedSlot.lesson.paid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
@@ -1811,6 +1903,110 @@ export function InstructorCalendar() {
             onSaved={handleSlotPlaceSaved}
           />
         </Suspense>
+      )}
+
+      {/* Instructor books a lesson for an existing student */}
+      {bookingSlot && (
+        <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-xl w-full md:max-w-md max-h-[92vh] md:max-h-[85vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-center justify-between shrink-0">
+              <div>
+                <p className="font-semibold text-gray-900">Pievienot skolēna nodarbību</p>
+                <p className="text-sm text-gray-500">{bookingSlot.date} · {bookingSlot.time}–{bookingSlot.endTime}{bookingSlot.city ? ` · ${bookingSlot.city}` : ""}</p>
+              </div>
+              <button onClick={() => setBookingSlot(null)} className="p-2 hover:bg-gray-100 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 p-5 space-y-4 overflow-auto">
+              {/* Student search */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Skolēns</label>
+                <input
+                  type="text"
+                  value={bookingSearch}
+                  onChange={(e) => setBookingSearch(e.target.value)}
+                  placeholder="Meklēt pēc vārda, telefona vai e-pasta…"
+                  autoFocus
+                  className="w-full p-2.5 border rounded-lg text-sm"
+                />
+                <div className="mt-2 border rounded-lg divide-y max-h-56 overflow-auto">
+                  {bookingStudentsLoading && bookingStudents.length === 0 && (
+                    <p className="p-3 text-sm text-gray-400">Ielādē…</p>
+                  )}
+                  {!bookingStudentsLoading && bookingStudents.length === 0 && (
+                    <p className="p-3 text-sm text-gray-400">Nekas netika atrasts. Pievienojiet skolēnu sadaļā "Skolēni".</p>
+                  )}
+                  {bookingStudents.map((s: any) => (
+                    <button
+                      key={s.id}
+                      onClick={() => setBookingStudentId(s.id === bookingStudentId ? null : s.id)}
+                      className={`w-full text-left p-3 flex items-center justify-between gap-2 transition ${bookingStudentId === s.id ? "bg-emerald-50" : "hover:bg-gray-50"}`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-gray-900 truncate">{s.firstName} {s.lastName}</span>
+                        {s.phone ? (
+                          <span className="block text-xs text-gray-500">{s.phone}</span>
+                        ) : (
+                          <span className="block text-xs text-amber-600">nav telefona</span>
+                        )}
+                      </span>
+                      {bookingStudentId === s.id && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Amount + location */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Summa (EUR)</label>
+                  <input
+                    type="text"
+                    value={bookingAmount}
+                    onChange={(e) => setBookingAmount(e.target.value)}
+                    placeholder="30"
+                    className="w-full p-2.5 border rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Vieta</label>
+                  {(() => {
+                    const cityLocations = locations.filter((loc: Location) => loc.city === bookingSlot.city);
+                    return cityLocations.length > 0 ? (
+                      <select
+                        value={bookingLocation}
+                        onChange={(e) => setBookingLocation(e.target.value)}
+                        className="w-full p-2.5 border rounded-lg text-sm min-h-[42px]"
+                      >
+                        <option value="">— nav —</option>
+                        {cityLocations.map((loc: Location) => (
+                          <option key={loc.id} value={loc.name}>{loc.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-xs text-gray-400 p-2.5 min-h-[42px] flex items-center">{bookingSlot.city || "Nav pilsētas"}</div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 border-t border-gray-100 shrink-0">
+              <button
+                onClick={handleBookForStudent}
+                disabled={!bookingStudentId || bookingSubmitting}
+                className="w-full bg-slate-800 text-white px-4 py-3 rounded-lg text-sm font-medium hover:bg-slate-900 transition disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+              >
+                {bookingSubmitting ? "Rezervē…" : "Rezervēt un paziņot skolēnam"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog
